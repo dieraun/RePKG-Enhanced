@@ -9,8 +9,18 @@
     <RootNamespace>RePKG.Cli</RootNamespace>
   </PropertyGroup>
 
+  <!-- Windows x64 发布：NativeAOT + 原生库内嵌（单文件 .exe） -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x64'">
+    <SelfContained>true</SelfContained>
+    <PublishAot>true</PublishAot>
+    <BundleNativeLibraries>true</BundleNativeLibraries>
+    <BundledNativeLibraryNames>libSkiaSharp.dll</BundledNativeLibraryNames>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\RePKG.Shared\RePKG.Shared.csproj" />
   </ItemGroup>
+
+  <Import Project="..\..\build\NativeBundle.targets" />
 
 </Project>

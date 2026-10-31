@@ -11,6 +11,14 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
 
+  <!-- Windows x64 发布：NativeAOT + 三个原生库全部内嵌（单文件 .exe，目录里不留 DLL） -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x64'">
+    <SelfContained>true</SelfContained>
+    <PublishAot>true</PublishAot>
+    <BundleNativeLibraries>true</BundleNativeLibraries>
+    <BundledNativeLibraryNames>libSkiaSharp.dll;libHarfBuzzSharp.dll;av_libglesv2.dll</BundledNativeLibraryNames>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Avalonia" />
     <PackageReference Include="Avalonia.Desktop" />
@@ -21,5 +29,7 @@
   <ItemGroup>
     <ProjectReference Include="..\RePKG.Shared\RePKG.Shared.csproj" />
   </ItemGroup>
+
+  <Import Project="..\..\build\NativeBundle.targets" />
 
 </Project>

@@ -19,7 +19,7 @@
 | 自定义输出目录 | `MainWindow.axaml` 输出目录行 + VM `ChooseOutputAsync` | `MainWindowViewModelTests.AddFolderCommand_UsesDialogAndRecursionSetting` |
 | 导出任务队列（与 CLI 同一实现） | `src\RePKG.Shared\Export\ExportQueue.cs`；GUI 只做 `entrySelector` 传入（VM `:483`） | `Export_WritesOnlySelectedEntriesIntoPerPackageFolder`、`Export_ConvertsTexAndWritesJson`；ADR-013/016 |
 | 暂停 / 继续 / 取消 | VM `PauseCommand/ResumeCommand/CancelCommand` → `ExportQueue.Control` | `Cancel_StopsExportAndLeavesNoTemporaryFiles`（断言无 `.tmp` 残留） |
-| 明暗主题跟随系统 | `src\RePKG.Gui\App.axaml` `RequestedThemeVariant="Default"` + `<FluentTheme/>` | `MainWindowTests.MainWindow_RendersBothThemeVariants`（截图见 `artifacts\gui\`） |
+| 明暗主题跟随系统 | `src\RePKG.Gui\App.axaml` `RequestedThemeVariant="Default"` + `<FluentTheme/>` | `MainWindowTests.MainWindow_RendersBothThemeVariants`（截图见 `docs\images\`） |
 | 导出日志 | `ExportQueue` 每包 `export-log.jsonl`（阶段 3 已实现，GUI 复用） | `ExtractsEntriesAndWritesLog`（CLI）、`WriteManifest_EmitsEntryTableJson`（Shared） |
 | 资源清单 | `src\RePKG.Shared\Catalog\PackageManifest.cs`；CLI `--manifest`、GUI「写 manifest 清单」 | Shared/CLI/GUI 三处测试 |
 | TEX 转 PNG/GIF | 阶段 4 的 `TexEntryConverter`（`IEntryConverter`）；GUI 勾选框 `ConvertTex` | `Export_ConvertsTexAndWritesJson` |
@@ -102,10 +102,14 @@ dotnet run --project src\RePKG.Gui -c Release
 | `RePKG.Tests.BigFiles`（门禁） | 2 passed，3 m 35 s |
 | 合计 | **133 passed / 0 failed** |
 
-截图产物（由无头测试真实渲染，非手绘 moke）：
+截图产物（由无头测试真实渲染，非手绘 moke，随仓库提交在 `docs\images\`）：
 
-- `artifacts\gui\main-window-light.png`（1200×780，38 009 B）
-- `artifacts\gui\main-window-dark.png`（1200×780，38 010 B）
+![浅色主题主窗口](images/main-window-light.png)
+
+![深色主题主窗口](images/main-window-dark.png)
+
+- `docs\images\main-window-light.png`（1200×780）
+- `docs\images\main-window-dark.png`（1200×780）
 
 ---
 

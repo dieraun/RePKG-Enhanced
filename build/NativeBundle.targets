@@ -1,0 +1,55 @@
+<Project>
+
+  <!--
+    原生库内嵌（配合 RePKG.Shared/Native/NativeBootstrap.cs）。
+
+    为什么需要它：`PublishAot=true` 时 `PublishSingleFile` 不生效，SkiaSharp / HarfBuzzSharp /
+    ANGLE 的 DLL 会落在 exe 旁边（dotnet/runtime#117986）。这里改成把 DLL 作为
+    EmbeddedResource 打进程序集，发布目录里不再留 DLL，启动时再自解压到 %LOCALAPPDATA%。
+
+    用法（在可执行项目的 csproj 里）：
+      <BundleNativeLibraries>true</BundleNativeLibraries>
+      <BundledNativeLibraryNames>libSkiaSharp.dll;libHarfBuzzSharp.dll;av_libglesv2.dll</BundledNativeLibraryNames>
+      <Import Project="..\..\build\NativeBundle.targets" />
+  -->
+
+  <!--
+    注意：必须挂在 SplitResourcesByCulture 之前。它虽然由 PrepareResourceNames 依赖执行，
+    但会把 @(EmbeddedResource) 快照进 _CoreCompileResourceInputs —— 挂在 PrepareResourceNames
+    之前就已经太晚了（资源会被静默忽略，dll 里什么都没有）。
+  -->
+  <Target Name="_BundleNativeLibraries"
+          BeforeTargets="SplitResourcesByCulture"
+          Condition="'$(BundleNativeLibraries)' == 'true' and '$(RuntimeIdentifier)' == 'win-x64'">
+
+    <ItemGroup>
+      <_BundledNativeLibrary Include="@(NativeCopyLocalItems)"
+                             Condition="$([System.String]::new(';$(BundledNativeLibraryNames);').Contains(';%(Filename)%(Extension);'))" />
+    </ItemGroup>
+
+    <Error Condition="'@(_BundledNativeLibrary)' == ''"
+           Text="没有在 NativeCopyLocalItems 里找到要内嵌的原生库（$(BundledNativeLibraryNames)）。请确认已 restore 且 RuntimeIdentifier=$(RuntimeIdentifier)。" />
+
+    <ItemGroup>
+      <EmbeddedResource Include="@(_BundledNativeLibrary)">
+        <LogicalName>RePKG.Native.%(Filename)%(Extension)</LogicalName>
+        <Visible>false</Visible>
+      </EmbeddedResource>
+    </ItemGroup>
+
+    <Message Importance="high"
+             Text="RePKG: 内嵌原生库 → @(_BundledNativeLibrary->'%(Filename)%(Extension)', ', ')" />
+  </Target>
+
+  <!-- 发布目录里去掉这些 DLL（以及原生库自带的 pdb，几十 MB 且对用户无用） -->
+  <Target Name="_DropBundledNativeLibraries"
+          AfterTargets="ComputeResolvedFilesToPublishList"
+          Condition="'$(BundleNativeLibraries)' == 'true' and '$(RuntimeIdentifier)' == 'win-x64'">
+
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+                             Condition="$([System.String]::new(';$(BundledNativeLibraryNames);').Contains(';%(Filename)%(Extension);')) or '%(Filename)%(Extension)' == 'libSkiaSharp.pdb' or '%(Filename)%(Extension)' == 'libHarfBuzzSharp.pdb'" />
+    </ItemGroup>
+  </Target>
+
+</Project>

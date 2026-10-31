@@ -109,3 +109,15 @@
 - **理由**：Avalonia 12 移除了 `DragEventArgs.Data` 与 `DataFormats`（`CS0619: 'DataFormats' is obsolete: 'Use DataFormat instead'`），旧代码直接编译失败。用真实事件链而非直接调 VM，是因为「拖拽在 UI 层被正确接线」本身就是功能规范的一项，只能靠事件路径验证。
 - **影响**：`DataFormatKind`/`DataFormat<T>` 成为文件载荷入口；未来若要支持「拖入图片作为纹理」等，也走同一套 `IDataTransfer` 抽象。
 - **状态**：已定（阶段 5）。
+
+## ADR-019 Windows 单文件 AOT：原生库内嵌 + 启动自解压预加载
+- **决策**：不用 `PublishSingleFile`（对 `PublishAot` 无效），改为把 `libSkiaSharp.dll`（GUI 另加 `libHarfBuzzSharp.dll`、`av_libglesv2.dll`）作为 `EmbeddedResource` 编进程序集，启动时由 `NativeBootstrap.EnsureLoaded()` 解压到 `%LOCALAPPDATA%\RePKG-Enhanced\native\<版本>` 并 `NativeLibrary.Load` 预加载；随后 `DllImport("libSkiaSharp")` 的裸名加载命中已加载模块。MSBuild 目标必须挂 `BeforeTargets="SplitResourcesByCulture"`。
+- **理由**：实测 `PublishAot` + `PublishSingleFile` 产物仍带三个原生 DLL（上游 dotnet/runtime#117986 明确「这些属性并不工作」）；.NET 10 又取消了单文件应用在 exe 目录搜索原生库的行为。两条叠加后唯一可靠路径就是「自己打包 + 自己加载」。目标挂载点是 `-v:diag` 才定位到的坑：`SplitResourcesByCulture` 是 `PrepareResourceNames` 的依赖，会在它之前把 `@(EmbeddedResource)` 快照进 `_CoreCompileResourceInputs`，挂 `PrepareResourceNames` 之前已经太晚，资源会被静默丢弃（现象是 `repkg.dll` 只有 31 KB）。
+- **影响**：CLI 13.7 MiB / GUI 35.4 MiB 单文件；首次启动解压约 11.6 MB（CLI）或 19 MB（GUI），旧版本目录暂不自动清理；`NativeBootstrap.LastError` 承担「静默失败」的可观测性。Linux/macOS 不受影响（配置全部带 `Condition="'$(RuntimeIdentifier)' == 'win-x64'"`）。
+- **状态**：已定（阶段 6）。
+
+## ADR-020 发布流水线：单 job `windows-latest` + tag 触发 + `gh` 上传 Release
+- **决策**：`.github/workflows/release.yml` 只有 `windows-x64` 一个 job；触发条件 `push.tags: v*` 与 `workflow_dispatch`（可指定 tag 覆盖已存在的 Release）；用 `gh release create/upload --clobber` 上传 `repkg-win-x64.exe`、`RePKG-Enhanced-win-x64.exe`、`SHA256SUMS.txt`；流水线内置两条「假单文件」护栏——产物目录出现任何 `.dll` 或 exe < 5 MB 直接失败。
+- **理由**：用户本轮明确「只要 Windows x64、只跑 windows 流水线」，三平台矩阵此时只会制造看不到的红叉；用官方 `gh` CLI 而不是第三方 Release action，少一个供应链依赖；`vswhere` 提前验证 MSVC 工具链，避免 20 分钟 AOT 编译后在链接阶段才失败；产物校验把「原生库到底有没有进去」变成 CI 断言，而不是靠人肉看体积。
+- **影响**：`global.json` 的 SDK 版本放宽为 `10.0.100` + `rollForward: latestFeature`，避免 runner 上只有 10.0.1xx 时直接报错；CI 尚未在真实 runner 上跑过，首次 tag 可能需要按日志微调。Linux/macOS 发布作业留待后续阶段恢复。
+- **状态**：已定（阶段 6）。

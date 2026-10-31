@@ -1,0 +1,166 @@
+name: release
+
+# 只在打 tag（v*）时发布 Windows x64 产物；也可手动触发。
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要创建/覆盖的 Release tag（例如 v1.0.0）"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "true"
+  CONFIGURATION: Release
+  RID: win-x64
+
+jobs:
+  windows-x64:
+    name: Windows x64（NativeAOT 单文件）
+    runs-on: windows-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.x
+
+      - name: 环境信息
+        run: dotnet --info
+
+      # NativeAOT 需要 MSVC 链接器；windows-latest 自带 VS 2022 C++ 工作负载。
+      - name: 确认 AOT 工具链
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) { throw "vswhere 不存在，不是预期中的 windows-latest 镜像" }
+          & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+
+      - name: 还原
+        run: dotnet restore RePKG-Enhanced.slnx
+
+      - name: 编译
+        run: dotnet build RePKG-Enhanced.slnx -c $env:CONFIGURATION --no-restore
+
+      - name: 单元测试
+        run: |
+          dotnet test tests\RePKG.Tests\RePKG.Tests.csproj -c $env:CONFIGURATION --no-build
+          dotnet test tests\RePKG.Tests.Shared\RePKG.Tests.Shared.csproj -c $env:CONFIGURATION --no-build
+          dotnet test tests\RePKG.Tests.Cli\RePKG.Tests.Cli.csproj -c $env:CONFIGURATION --no-build
+          dotnet test tests\RePKG.Tests.Gui\RePKG.Tests.Gui.csproj -c $env:CONFIGURATION --no-build
+
+      - name: 发布 CLI（AOT 单文件）
+        run: >
+          dotnet publish src\RePKG.Cli\RePKG.Cli.csproj
+          -c $env:CONFIGURATION -r $env:RID -o artifacts\cli --nologo
+
+      - name: 发布 GUI（AOT 单文件）
+        run: >
+          dotnet publish src\RePKG.Gui\RePKG.Gui.csproj
+          -c $env:CONFIGURATION -r $env:RID -o artifacts\gui --nologo
+
+      - name: 校验产物（必须是单个 exe，旁边不许有 DLL）
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          foreach ($pair in @(@{ Dir = "artifacts\cli"; Exe = "repkg.exe" },
+                              @{ Dir = "artifacts\gui"; Exe = "RePKG-Enhanced.exe" })) {
+            $exe = Join-Path $pair.Dir $pair.Exe
+            if (-not (Test-Path $exe)) { throw "缺少 $exe" }
+
+            $dlls = Get-ChildItem $pair.Dir -Filter *.dll -ErrorAction SilentlyContinue
+            if ($dlls) { throw "$($pair.Dir) 里还有 DLL：$($dlls.Name -join ', ') —— 原生库没有内嵌成功" }
+
+            $size = (Get-Item $exe).Length
+            Write-Host "$exe = $size 字节"
+            if ($size -lt 5MB) { throw "$exe 太小（$size 字节），原生库大概没打进去" }
+          }
+
+      - name: 冒烟测试 CLI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          .\artifacts\cli\repkg.exe --version
+          if ($LASTEXITCODE -ne 0) { throw "repkg --version 退出码 $LASTEXITCODE" }
+
+      - name: 重命名产物
+        shell: pwsh
+        run: |
+          Copy-Item artifacts\cli\repkg.exe "artifacts\repkg-win-x64.exe" -Force
+          Copy-Item artifacts\gui\RePKG-Enhanced.exe "artifacts\RePKG-Enhanced-win-x64.exe" -Force
+          Get-ChildItem artifacts -Filter *.exe | Select-Object Name, Length
+
+      - name: 计算校验和
+        shell: pwsh
+        run: |
+          Get-ChildItem artifacts -Filter *.exe | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)" | Out-File artifacts\SHA256SUMS.txt -Append -Encoding utf8
+          }
+          Get-Content artifacts\SHA256SUMS.txt
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: repkg-windows-x64
+          path: |
+            artifacts/repkg-win-x64.exe
+            artifacts/RePKG-Enhanced-win-x64.exe
+            artifacts/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: 发布 Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $tag = "${{ github.event.inputs.tag }}"
+          } else {
+            $tag = "${{ github.ref_name }}"
+          }
+          Write-Host "Release tag = $tag"
+
+          $notes = @'
+          Windows x64 原生单文件（NativeAOT）。
+
+          - repkg-win-x64.exe：命令行版
+          - RePKG-Enhanced-win-x64.exe：图形界面版
+
+          两个 exe 都是自包含单文件：SkiaSharp / HarfBuzz / ANGLE 原生库内嵌在 exe 内，
+          首次运行自解压到 %LOCALAPPDATA%\RePKG-Enhanced\native\<版本>。
+          校验和见 SHA256SUMS.txt。
+          '@
+
+          $files = @(
+            "artifacts\repkg-win-x64.exe",
+            "artifacts\RePKG-Enhanced-win-x64.exe",
+            "artifacts\SHA256SUMS.txt"
+          )
+
+          gh release view $tag 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release 已存在，覆盖上传附件"
+            gh release upload $tag @files --clobber
+          } else {
+            gh release create $tag @files --title "RePKG-Enhanced $tag" --notes $notes --target "${{ github.sha }}"
+          }
