@@ -17,3 +17,6 @@ publish/
 # OS
 Thumbs.db
 .DS_Store
+
+# 本地发布自检目录
+.publish-check/
