@@ -1,0 +1,19 @@
+# 构建产物
+[Bb]in/
+[Oo]bj/
+artifacts/
+publish/
+*.user
+*.suo
+
+# 测试工作目录（大文件门禁会在磁盘上产生 GB 级中间文件）
+.bigtmp/
+
+# IDE
+.vs/
+.idea/
+*.DotSettings.user
+
+# OS
+Thumbs.db
+.DS_Store

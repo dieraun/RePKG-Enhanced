@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/RePKG.Application/RePKG.Application.csproj" />
+    <Project Path="src/RePKG.Core/RePKG.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/RePKG.Tests.BigFiles/RePKG.Tests.BigFiles.csproj" />
+    <Project Path="tests/RePKG.Tests/RePKG.Tests.csproj" />
+    <Project Path="tests/RePKG.TestSupport/RePKG.TestSupport.csproj" />
+  </Folder>
+</Solution>

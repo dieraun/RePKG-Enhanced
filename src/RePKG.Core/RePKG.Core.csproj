@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>netstandard2.0</TargetFramework>
+        <AssemblyName>RePKG.Core</AssemblyName>
+        <RootNamespace>RePKG.Core</RootNamespace>
+        <Version>1.0.0</Version>
+        <Copyright>基于 notscuffed/RePKG (MIT) 二次修改 — Copyright © NotScuffed 2025; modifications © RePKG-Enhanced contributors</Copyright>
+        <!-- 上游代码原样保留，不启用可空引用类型，避免无意义告警噪音 -->
+        <Nullable>disable</Nullable>
+    </PropertyGroup>
+</Project>
