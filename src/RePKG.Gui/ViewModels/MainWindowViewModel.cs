@@ -1,6 +1,9 @@
 // 基于 notscuffed/RePKG (MIT) 二次修改 —— 新增文件（RePKG-Enhanced）
 // 主视图模型：批量加载清单 → 勾选/筛选 → 交给 RePKG.Shared 的 ExportQueue 导出。
 // 这里**没有**任何条目复制循环，导出完全走阶段 2–4 的同一套内核。
+//
+// 2.0.0：界面文案全部走 ILocalizer；换语言时先改资源字典（XAML 那侧），
+// 再由本类刷新状态栏、筛选档、条目类型这些 C# 侧派生文案。
 
 using System;
 using System.Collections.Generic;
@@ -16,42 +19,58 @@ using CommunityToolkit.Mvvm.Input;
 using RePKG.Application.Package;
 using RePKG.Gui.Services;
 using RePKG.Shared.Export;
+using RePKG.Shared.Localization;
 using RePKG.Shared.Logging;
 using RePKG.Shared.Paths;
+using RePKG.Shared.Settings;
 
 namespace RePKG.Gui.ViewModels
 {
     public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         private readonly IDialogService _dialogs;
+        private readonly ILocalizer _localizer;
+        private readonly SettingsStore _settings;
         private readonly Action<Action> _post;
         private CancellationTokenSource? _exportCancellation;
         private ExportQueue? _queue;
         private Bitmap? _previewImage;
+        private string _statusKey = "gui.status.ready";
+        private object?[] _statusArgs = Array.Empty<object?>();
 
+        /// <summary>最小构造（测试/无设置场景）：内部使用内存设置，不写用户目录。</summary>
         public MainWindowViewModel(IDialogService dialogs, Action<Action>? post = null)
+            : this(dialogs, new Localizer(), SettingsStore.InMemory(), post)
+        {
+        }
+
+        public MainWindowViewModel(
+            IDialogService dialogs,
+            ILocalizer localizer,
+            SettingsStore settings,
+            Action<Action>? post = null)
         {
             _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
+            _localizer = localizer ?? throw new ArgumentNullException(nameof(localizer));
+            _settings = settings ?? SettingsStore.InMemory();
             _post = post ?? (action => Dispatcher.UIThread.Post(action));
 
-            FilterOptions = new ObservableCollection<EntryKindFilter>
-            {
-                new("全部条目", null),
-                new("图片", EntryKind.Image),
-                new("文本", EntryKind.Text),
-                new("视频", EntryKind.Video),
-                new("其它", EntryKind.Other)
-            };
+            FilterOptions = new ObservableCollection<EntryKindFilter>();
+            BuildFilterOptions();
 
-            _selectedFilter = FilterOptions[0];
             OutputDirectory = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
                 "RePKG-Enhanced");
+
+            _localizer.LanguageChanged += OnLanguageChanged;
+            RenderStatus();
         }
 
         public ObservableCollection<PackageViewModel> Packages { get; } = new();
         public ObservableCollection<EntryViewModel> VisibleEntries { get; } = new();
         public ObservableCollection<EntryKindFilter> FilterOptions { get; }
+
+        public ILocalizer Localizer => _localizer;
 
         [ObservableProperty]
         private PackageViewModel? _selectedPackage;
@@ -60,7 +79,7 @@ namespace RePKG.Gui.ViewModels
         private EntryViewModel? _selectedEntry;
 
         [ObservableProperty]
-        private EntryKindFilter _selectedFilter;
+        private EntryKindFilter _selectedFilter = null!;
 
         [ObservableProperty]
         private string _outputDirectory;
@@ -84,7 +103,7 @@ namespace RePKG.Gui.ViewModels
         private int _concurrency = 1;
 
         [ObservableProperty]
-        private string _statusText = "就绪。拖入 .pkg 文件，或点击「添加 pkg」开始。";
+        private string _statusText = string.Empty;
 
         [ObservableProperty]
         private bool _isBusy;
@@ -119,9 +138,12 @@ namespace RePKG.Gui.ViewModels
             }
         }
 
-        public string PackageCountText => $"{Packages.Count} 个包";
+        public string PackageCountText => _localizer.Format("gui.packageCount", Packages.Count);
 
         public bool HasPackages => Packages.Count > 0;
+
+        /// <summary>语言菜单当前选中项（"system"/"zh"/"en"），用于单选菜单打勾。</summary>
+        public string LanguageSettingValue => AppLanguages.ToSettingValue(_localizer.Setting);
 
         public void Initialize()
         {
@@ -133,10 +155,61 @@ namespace RePKG.Gui.ViewModels
                 }
                 catch (Exception ex)
                 {
-                    StatusText = $"输出目录不可用：{ex.Message}";
+                    SetStatus("gui.status.outputMissing", ex.Message);
                 }
             }
         }
+
+        // ───────────────────────────── 语言 ─────────────────────────────
+
+        [RelayCommand]
+        private void SetLanguage(string? value)
+        {
+            var language = AppLanguages.FromSettingValue(value);
+
+            _localizer.SetLanguage(language);
+            _settings.Save(new AppSettings { Language = language });
+            OnPropertyChanged(nameof(LanguageSettingValue));
+        }
+
+        private void OnLanguageChanged(object? sender, EventArgs e) => _post(RefreshLanguage);
+
+        /// <summary>换语言后刷新所有 C# 侧派生文案（XAML 侧由资源字典负责）。</summary>
+        public void RefreshLanguage()
+        {
+            var previousKind = SelectedFilter?.Kind;
+
+            BuildFilterOptions(previousKind);
+
+            foreach (var package in Packages)
+                package.RefreshLanguage();
+
+            RenderStatus();
+
+            OnPropertyChanged(nameof(PackageCountText));
+            OnPropertyChanged(nameof(LanguageSettingValue));
+        }
+
+        private void BuildFilterOptions(EntryKind? selected = null)
+        {
+            FilterOptions.Clear();
+            FilterOptions.Add(new EntryKindFilter(_localizer.Get("gui.filter.all"), null));
+            FilterOptions.Add(new EntryKindFilter(_localizer.Get("gui.filter.image"), EntryKind.Image));
+            FilterOptions.Add(new EntryKindFilter(_localizer.Get("gui.filter.text"), EntryKind.Text));
+            FilterOptions.Add(new EntryKindFilter(_localizer.Get("gui.filter.video"), EntryKind.Video));
+            FilterOptions.Add(new EntryKindFilter(_localizer.Get("gui.filter.other"), EntryKind.Other));
+
+            SelectedFilter = FilterOptions.FirstOrDefault(option => option.Kind == selected) ?? FilterOptions[0];
+        }
+
+        private void SetStatus(string key, params object?[] args)
+        {
+            _statusKey = key;
+            _statusArgs = args;
+            RenderStatus();
+        }
+
+        private void RenderStatus() => StatusText = _localizer.Format(_statusKey, _statusArgs);
 
         // ───────────────────────────── 加载 ─────────────────────────────
 
@@ -179,7 +252,7 @@ namespace RePKG.Gui.ViewModels
 
             if (pending.Count == 0)
             {
-                StatusText = "没有新的 pkg 可加载。";
+                SetStatus("gui.status.noNewPackages");
 
                 return;
             }
@@ -193,7 +266,7 @@ namespace RePKG.Gui.ViewModels
 
                 foreach (var path in pending)
                 {
-                    StatusText = $"正在读取清单：{Path.GetFileName(path)}…";
+                    SetStatus("gui.status.readingManifests", Path.GetFileName(path));
 
                     var package = await Task.Run(() => LoadPackage(path)).ConfigureAwait(true);
 
@@ -213,9 +286,10 @@ namespace RePKG.Gui.ViewModels
                 if (SelectedPackage == null && Packages.Count > 0)
                     SelectedPackage = Packages[0];
 
-                StatusText = failed == 0
-                    ? $"已加载 {loaded} 个包。"
-                    : $"已加载 {loaded} 个包，{failed} 个读取失败（详见日志窗口/导出日志）。";
+                if (failed == 0)
+                    SetStatus("gui.status.loaded", loaded);
+                else
+                    SetStatus("gui.status.loadedWithFailures", loaded, failed);
 
                 ExportCommand.NotifyCanExecuteChanged();
             }
@@ -234,7 +308,7 @@ namespace RePKG.Gui.ViewModels
                 var entries = new List<EntryViewModel>(source.Entries.Count);
 
                 foreach (var entry in source.Entries)
-                    entries.Add(new EntryViewModel(entry.FullPath, entry.Length));
+                    entries.Add(new EntryViewModel(entry.FullPath, entry.Length, _localizer));
 
                 string? title = null;
 
@@ -260,11 +334,13 @@ namespace RePKG.Gui.ViewModels
                     // project.json 缺失/损坏不影响清单加载
                 }
 
-                return new PackageViewModel(path, title, entries, source.FileLength);
+                return new PackageViewModel(path, title, entries, source.FileLength, _localizer);
             }
             catch (Exception ex)
             {
-                _post(() => StatusText = $"读取失败：{Path.GetFileName(path)} — {ex.Message}");
+                var name = Path.GetFileName(path);
+
+                _post(() => SetStatus("gui.status.readFailed", $"{name} — {ex.Message}"));
 
                 return null;
             }
@@ -280,7 +356,7 @@ namespace RePKG.Gui.ViewModels
         [RelayCommand]
         private async Task AddFolderAsync()
         {
-            var folder = await _dialogs.PickFolderAsync("选择包含 pkg 的目录");
+            var folder = await _dialogs.PickFolderAsync(_localizer.Get("gui.dialog.pickPackageFolder"));
 
             if (folder == null)
                 return;
@@ -317,7 +393,7 @@ namespace RePKG.Gui.ViewModels
             SelectedPackage = null;
             OnPropertyChanged(nameof(PackageCountText));
             OnPropertyChanged(nameof(HasPackages));
-            StatusText = "已清空列表。";
+            SetStatus("gui.status.cleared");
             ExportCommand.NotifyCanExecuteChanged();
         }
 
@@ -388,7 +464,7 @@ namespace RePKG.Gui.ViewModels
 
             try
             {
-                var data = await Task.Run(() => PreviewService.Load(packagePath, entry.FullPath, entry.Kind))
+                var data = await Task.Run(() => PreviewService.Load(packagePath, entry.FullPath, entry.Kind, _localizer))
                     .ConfigureAwait(true);
 
                 PreviewText = data.Text;
@@ -402,7 +478,7 @@ namespace RePKG.Gui.ViewModels
             }
             catch (Exception ex)
             {
-                PreviewNote = $"预览失败：{ex.Message}";
+                PreviewNote = _localizer.Format("gui.preview.failed", ex.Message);
             }
         }
 
@@ -423,7 +499,7 @@ namespace RePKG.Gui.ViewModels
         {
             if (string.IsNullOrWhiteSpace(OutputDirectory))
             {
-                StatusText = "请先选择输出目录。";
+                SetStatus("gui.status.selectOutput");
 
                 return;
             }
@@ -438,7 +514,7 @@ namespace RePKG.Gui.ViewModels
             IsPaused = false;
             ProgressValue = 0;
             ProgressText = string.Empty;
-            StatusText = $"正在导出 {targets.Count} 个包…";
+            SetStatus("gui.status.exporting", targets.Count);
 
             _exportCancellation = new CancellationTokenSource();
 
@@ -488,28 +564,24 @@ namespace RePKG.Gui.ViewModels
 
                 // 取消也算「没成功」：先说取消，否则「导出完成 0 个文件」会误导
                 if (summary.Canceled > 0)
-                {
-                    StatusText = $"已取消：成功 {summary.Succeeded} / 跳过 {summary.Skipped} / 失败 {summary.Failed} / 取消 {summary.Canceled}（已完成的条目已保留）。";
-                }
+                    SetStatus("gui.status.canceled", summary.Succeeded, summary.Skipped, summary.Failed, summary.Canceled);
+                else if (summary.IsSuccess)
+                    SetStatus("gui.status.exportDone", summary.Succeeded, ByteSize.Format(summary.BytesWritten), summary.Duration.TotalSeconds);
                 else
-                {
-                    StatusText = summary.IsSuccess
-                        ? $"导出完成：{summary.Succeeded} 个文件，{ByteSize.Format(summary.BytesWritten)}，用时 {summary.Duration.TotalSeconds:0.0}s。"
-                        : $"导出结束：成功 {summary.Succeeded} / 跳过 {summary.Skipped} / 失败 {summary.Failed} / 取消 {summary.Canceled}。";
-                }
+                    SetStatus("gui.status.exportDoneWithFailures", summary.Succeeded, summary.Skipped, summary.Failed, ByteSize.Format(summary.BytesWritten), summary.Duration.TotalSeconds);
 
                 if (summary.Failed > 0)
-                    ProgressText = "存在失败项，详见各包目录下的 export-log.jsonl";
+                    ProgressText = _localizer.Format("gui.status.exportFailedHint", summary.Failed);
 
                 ProgressValue = 100;
             }
             catch (OperationCanceledException)
             {
-                StatusText = "已取消（已完成的条目已保留）。";
+                SetStatus("gui.status.canceledPlain");
             }
             catch (Exception ex)
             {
-                StatusText = $"导出失败：{ex.Message}";
+                SetStatus("gui.status.exportFailed", ex.Message);
             }
             finally
             {
@@ -541,9 +613,14 @@ namespace RePKG.Gui.ViewModels
 
         private void ApplyProgress(ExportProgress progress)
         {
+            var current = progress.CurrentEntry ?? _localizer.Get("gui.progress.preparing");
+
             ProgressText = progress.PackagesTotal > 0
-                ? $"包 {Math.Min(progress.PackagesDone + 1, progress.PackagesTotal)}/{progress.PackagesTotal} · {progress.CurrentEntry ?? "准备中"}"
-                : "准备中…";
+                ? _localizer.Format("gui.progress.package",
+                    Math.Min(progress.PackagesDone + 1, progress.PackagesTotal),
+                    progress.PackagesTotal,
+                    current)
+                : _localizer.Get("gui.progress.preparing");
 
             ProgressValue = progress.PackagesTotal > 0
                 ? (progress.PackagesDone + progress.EntryFraction) * 100.0 / progress.PackagesTotal
@@ -553,7 +630,8 @@ namespace RePKG.Gui.ViewModels
         private void ApplyJobResult(ExportJobResult result)
         {
             var name = Path.GetFileName(result.PackagePath);
-            ProgressText = $"{name}：成功 {result.Succeeded} / 跳过 {result.Skipped} / 失败 {result.Failed}";
+
+            ProgressText = _localizer.Format("gui.progress.job", name, result.Succeeded, result.Skipped, result.Failed);
         }
 
         [RelayCommand(CanExecute = nameof(IsExporting))]
@@ -561,7 +639,7 @@ namespace RePKG.Gui.ViewModels
         {
             _queue?.Control.Pause();
             IsPaused = true;
-            StatusText = "已暂停（在条目边界生效）。";
+            SetStatus("gui.status.paused");
         }
 
         [RelayCommand(CanExecute = nameof(IsExporting))]
@@ -569,23 +647,26 @@ namespace RePKG.Gui.ViewModels
         {
             _queue?.Control.Resume();
             IsPaused = false;
-            StatusText = "已继续。";
+            SetStatus("gui.status.resumed");
         }
 
         [RelayCommand(CanExecute = nameof(IsExporting))]
         private void Cancel()
         {
             _queue?.Control.Cancel();
-            StatusText = "正在取消…";
+            SetStatus("gui.status.canceling");
         }
 
         [RelayCommand]
         private async Task ChooseOutputAsync()
         {
-            var folder = await _dialogs.PickFolderAsync("选择输出目录");
+            var folder = await _dialogs.PickFolderAsync(_localizer.Get("gui.dialog.pickOutputFolder"));
 
             if (folder != null)
+            {
                 OutputDirectory = folder;
+                SetStatus("gui.status.outputSet", folder);
+            }
         }
 
         [RelayCommand]
@@ -594,11 +675,16 @@ namespace RePKG.Gui.ViewModels
             if (Directory.Exists(OutputDirectory))
                 _dialogs.RevealInFileManager(OutputDirectory);
             else
-                StatusText = "输出目录尚不存在（导出后自动创建）。";
+                SetStatus("gui.status.outputNotCreated");
         }
+
+        [RelayCommand]
+        private Task ShowAboutAsync() => _dialogs.ShowAboutAsync();
 
         public void Dispose()
         {
+            _localizer.LanguageChanged -= OnLanguageChanged;
+
             _exportCancellation?.Cancel();
             _exportCancellation?.Dispose();
             _exportCancellation = null;

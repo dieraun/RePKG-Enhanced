@@ -1,19 +1,20 @@
 // 基于 notscuffed/RePKG (MIT) 二次修改 —— 新增文件（RePKG-Enhanced）
 // tex 子命令：把独立的 .tex 文件转成 png/gif/mp4（复用同一个 TexEntryConverter，
-// 不在这里重新实现解码）。
+// 不在这里重新实现解码）。2.0.0：文案走本地化表。
 
 using System;
 using System.IO;
 using System.Threading;
 using RePKG.Shared.Export;
+using RePKG.Shared.Localization;
 
 namespace RePKG.Cli
 {
     internal static class TexCommand
     {
-        public static ExitCode Run(CliOptions options, TextWriter output, CancellationToken cancellationToken)
+        public static ExitCode Run(CliOptions options, TextWriter output, CancellationToken cancellationToken, ILocalizer localizer)
         {
-            var files = InputResolver.CollectTexFiles(options.Inputs, options.Recursive);
+            var files = InputResolver.CollectTexFiles(options.Inputs, options.Recursive, localizer);
             var outputRoot = Path.GetFullPath(options.Output ?? "output");
 
             Directory.CreateDirectory(outputRoot);
@@ -38,12 +39,16 @@ namespace RePKG.Cli
                     if (result.Skipped)
                     {
                         skipped++;
-                        output.WriteLine($"[跳过] {Path.GetFileName(file)}（目标已存在）");
+                        output.WriteLine(localizer.Format("cli.tex.skipped", Path.GetFileName(file)));
                     }
                     else
                     {
                         succeeded++;
-                        output.WriteLine($"[完成] {Path.GetFileName(file)} → {Path.GetFileName(result.PrimaryPath)}，{ConsoleReporter.FormatBytes(result.BytesWritten)}");
+                        output.WriteLine(localizer.Format(
+                            "cli.tex.done",
+                            Path.GetFileName(file),
+                            Path.GetFileName(result.PrimaryPath),
+                            ConsoleReporter.FormatBytes(result.BytesWritten)));
                     }
                 }
                 catch (OperationCanceledException)
@@ -53,11 +58,11 @@ namespace RePKG.Cli
                 catch (Exception ex)
                 {
                     failed++;
-                    output.WriteLine($"[失败] {Path.GetFileName(file)}：{ex.Message}");
+                    output.WriteLine(localizer.Format("cli.tex.failed", Path.GetFileName(file), ex.Message));
                 }
             }
 
-            output.WriteLine($"汇总：成功 {succeeded} / 跳过 {skipped} / 失败 {failed}");
+            output.WriteLine(localizer.Format("cli.texSummary", succeeded, skipped, failed));
 
             return failed > 0 ? ExitCode.PartialFailure : ExitCode.Success;
         }

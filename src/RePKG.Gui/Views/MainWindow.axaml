@@ -5,27 +5,43 @@
         x:Class="RePKG.Gui.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         x:CompileBindings="True"
-        Title="RePKG-Enhanced — Wallpaper Engine pkg 提取"
+        Title="{DynamicResource app.window.title}"
         Width="1200" Height="780"
         MinWidth="880" MinHeight="560"
         DragDrop.AllowDrop="True">
 
-  <Grid RowDefinitions="Auto,*,Auto" Margin="10">
+  <!-- 2.0.0：所有界面文案都是 {DynamicResource ...}，换语言时由 LocalizationResources 换字典即时生效 -->
+  <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="10">
+
+    <!-- ───────── 菜单：语言 / 关于 ───────── -->
+    <Menu Grid.Row="0" Margin="0,0,0,6">
+      <MenuItem Header="{DynamicResource lang.menu}">
+        <MenuItem Header="{DynamicResource lang.system}"
+                  Command="{CompiledBinding SetLanguageCommand}" CommandParameter="system" />
+        <Separator />
+        <MenuItem Header="{DynamicResource lang.zh}"
+                  Command="{CompiledBinding SetLanguageCommand}" CommandParameter="zh" />
+        <MenuItem Header="{DynamicResource lang.en}"
+                  Command="{CompiledBinding SetLanguageCommand}" CommandParameter="en" />
+      </MenuItem>
+      <MenuItem Header="{DynamicResource about.menu}"
+                Command="{CompiledBinding ShowAboutCommand}" />
+    </Menu>
 
     <!-- ───────── 工具栏：文件与筛选（无动画、无装饰，只有按钮） ───────── -->
-    <Border Grid.Row="0" Padding="8" CornerRadius="6"
+    <Border Grid.Row="1" Padding="8" CornerRadius="6"
             Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}">
       <WrapPanel Orientation="Horizontal">
 
-        <Button Content="添加 pkg" Command="{CompiledBinding AddPackagesCommand}" Margin="0,0,6,4" />
-        <Button Content="添加目录" Command="{CompiledBinding AddFolderCommand}" Margin="0,0,6,4" />
-        <Button Content="移除选中" Command="{CompiledBinding RemovePackageCommand}" Margin="0,0,6,4" />
-        <Button Content="清空" Command="{CompiledBinding ClearPackagesCommand}" Margin="0,0,16,4" />
+        <Button Content="{DynamicResource gui.addPackage}" Command="{CompiledBinding AddPackagesCommand}" Margin="0,0,6,4" />
+        <Button Content="{DynamicResource gui.addFolder}" Command="{CompiledBinding AddFolderCommand}" Margin="0,0,6,4" />
+        <Button Content="{DynamicResource gui.removeSelected}" Command="{CompiledBinding RemovePackageCommand}" Margin="0,0,6,4" />
+        <Button Content="{DynamicResource gui.clear}" Command="{CompiledBinding ClearPackagesCommand}" Margin="0,0,16,4" />
 
-        <TextBlock Text="筛选：" VerticalAlignment="Center" Margin="0,0,4,4" />
+        <TextBlock Text="{DynamicResource gui.filter}" VerticalAlignment="Center" Margin="0,0,4,4" />
         <ComboBox ItemsSource="{CompiledBinding FilterOptions}"
                   SelectedItem="{CompiledBinding SelectedFilter}"
-                  Width="120" Margin="0,0,16,4">
+                  Width="130" Margin="0,0,16,4">
           <ComboBox.ItemTemplate>
             <DataTemplate x:DataType="vm:EntryKindFilter">
               <TextBlock Text="{CompiledBinding Name}" />
@@ -33,14 +49,14 @@
           </ComboBox.ItemTemplate>
         </ComboBox>
 
-        <Button Content="全选" Command="{CompiledBinding SelectAllCommand}" Margin="0,0,6,4" />
-        <Button Content="全不选" Command="{CompiledBinding SelectNoneCommand}" Margin="0,0,6,4" />
-        <Button Content="反选" Command="{CompiledBinding InvertSelectionCommand}" Margin="0,0,0,4" />
+        <Button Content="{DynamicResource gui.selectAll}" Command="{CompiledBinding SelectAllCommand}" Margin="0,0,6,4" />
+        <Button Content="{DynamicResource gui.selectNone}" Command="{CompiledBinding SelectNoneCommand}" Margin="0,0,6,4" />
+        <Button Content="{DynamicResource gui.invert}" Command="{CompiledBinding InvertSelectionCommand}" Margin="0,0,0,4" />
       </WrapPanel>
     </Border>
 
     <!-- ───────── 主体三栏 ───────── -->
-    <Grid Grid.Row="1" ColumnDefinitions="300,4,*,4,380" Margin="0,10,0,10">
+    <Grid Grid.Row="2" ColumnDefinitions="300,4,*,4,380" Margin="0,10,0,10">
 
       <!-- 包列表 -->
       <Border Grid.Column="0" BorderThickness="1" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
@@ -100,7 +116,7 @@
       <Border Grid.Column="4" BorderThickness="1"
               BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" CornerRadius="6" Padding="8">
         <DockPanel>
-          <TextBlock DockPanel.Dock="Top" Text="预览" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <TextBlock DockPanel.Dock="Top" Text="{DynamicResource gui.preview}" FontWeight="SemiBold" Margin="0,0,0,6" />
 
           <Panel>
             <Image Source="{CompiledBinding PreviewImage}" Stretch="Uniform"
@@ -116,45 +132,47 @@
     </Grid>
 
     <!-- ───────── 输出与状态栏 ───────── -->
-    <Border Grid.Row="2" Padding="8" CornerRadius="6"
+    <Border Grid.Row="3" Padding="8" CornerRadius="6"
             Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}">
       <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
 
         <!-- 输出目录 -->
         <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto">
-          <TextBlock Grid.Column="0" Text="输出目录：" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="0" Text="{DynamicResource gui.output}" VerticalAlignment="Center" Margin="0,0,6,0" />
           <TextBox Grid.Column="1" Text="{CompiledBinding OutputDirectory}" Margin="0,0,6,0" />
-          <Button Grid.Column="2" Content="浏览…" Command="{CompiledBinding ChooseOutputCommand}" Margin="0,0,6,0" />
-          <Button Grid.Column="3" Content="打开" Command="{CompiledBinding RevealOutputCommand}" />
+          <Button Grid.Column="2" Content="{DynamicResource gui.browse}" Command="{CompiledBinding ChooseOutputCommand}" Margin="0,0,6,0" />
+          <Button Grid.Column="3" Content="{DynamicResource gui.open}" Command="{CompiledBinding RevealOutputCommand}" />
         </Grid>
 
-        <!-- 导出选项与动作 -->
+        <!-- 导出选项 -->
         <WrapPanel Grid.Row="1" Orientation="Horizontal">
-          <CheckBox Content="递归子目录" IsChecked="{CompiledBinding Recursive}" Margin="0,0,12,4" />
-          <CheckBox Content="覆盖已有文件" IsChecked="{CompiledBinding Overwrite}" Margin="0,0,12,4" />
-          <CheckBox Content="TEX 转 PNG/GIF" IsChecked="{CompiledBinding ConvertTex}" Margin="0,0,12,4" />
-          <CheckBox Content="写 .json 元信息" IsChecked="{CompiledBinding WriteTexInfo}" Margin="0,0,12,4" />
-          <CheckBox Content="写 manifest 清单" IsChecked="{CompiledBinding WriteManifest}" Margin="0,0,16,4" />
+          <CheckBox Content="{DynamicResource gui.recursive}" IsChecked="{CompiledBinding Recursive}" Margin="0,0,12,4" />
+          <CheckBox Content="{DynamicResource gui.overwrite}" IsChecked="{CompiledBinding Overwrite}" Margin="0,0,12,4" />
+          <CheckBox Content="{DynamicResource gui.convertTex}" IsChecked="{CompiledBinding ConvertTex}" Margin="0,0,12,4" />
+          <CheckBox Content="{DynamicResource gui.writeTexInfo}" IsChecked="{CompiledBinding WriteTexInfo}" Margin="0,0,12,4" />
+          <CheckBox Content="{DynamicResource gui.writeManifest}" IsChecked="{CompiledBinding WriteManifest}" Margin="0,0,16,4" />
 
-          <TextBlock Text="并发" VerticalAlignment="Center" Margin="0,0,4,4" />
+          <TextBlock Text="{DynamicResource gui.concurrency}" VerticalAlignment="Center" Margin="0,0,4,4" />
           <NumericUpDown Value="{CompiledBinding Concurrency}" Minimum="1" Maximum="4"
-                         Increment="1" FormatString="0" Width="96" Margin="0,0,16,4" />
-
-          <Button Content="开始导出" Command="{CompiledBinding ExportCommand}"
-                  FontWeight="SemiBold" Margin="0,0,6,4" />
-          <Button Content="暂停" Command="{CompiledBinding PauseCommand}" Margin="0,0,6,4" />
-          <Button Content="继续" Command="{CompiledBinding ResumeCommand}" Margin="0,0,6,4" />
-          <Button Content="取消" Command="{CompiledBinding CancelCommand}" Margin="0,0,0,4" />
+                         Increment="1" FormatString="0" Width="96" Margin="0,0,0,4" />
         </WrapPanel>
 
-        <!-- 进度与状态 -->
+        <!-- 进度、状态与动作按钮（动作按钮独立一行，避免英文界面换行错位） -->
         <Grid Grid.Row="2" ColumnDefinitions="*,Auto">
           <StackPanel Grid.Column="0">
             <ProgressBar Value="{CompiledBinding ProgressValue}" Minimum="0" Maximum="100" Height="6" />
             <TextBlock Text="{CompiledBinding ProgressText}" FontSize="11" Opacity="0.75" Margin="0,4,0,0" />
           </StackPanel>
-          <TextBlock Grid.Column="1" Text="{CompiledBinding StatusText}" FontSize="11"
-                     VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap" MaxWidth="460" />
+
+          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+            <TextBlock Text="{CompiledBinding StatusText}" FontSize="11" VerticalAlignment="Center"
+                       TextWrapping="Wrap" MaxWidth="420" Margin="0,0,12,0" />
+            <Button Content="{DynamicResource gui.start}" Command="{CompiledBinding ExportCommand}"
+                    FontWeight="SemiBold" Margin="0,0,6,0" />
+            <Button Content="{DynamicResource gui.pause}" Command="{CompiledBinding PauseCommand}" Margin="0,0,6,0" />
+            <Button Content="{DynamicResource gui.resume}" Command="{CompiledBinding ResumeCommand}" Margin="0,0,6,0" />
+            <Button Content="{DynamicResource gui.cancel}" Command="{CompiledBinding CancelCommand}" />
+          </StackPanel>
         </Grid>
       </Grid>
     </Border>

@@ -16,5 +16,8 @@ namespace RePKG.Gui.Services
 
         /// <summary>在文件管理器里定位文件/目录（失败静默）。</summary>
         void RevealInFileManager(string path);
+
+        /// <summary>打开「关于」对话框（模态）。</summary>
+        Task ShowAboutAsync();
     }
 }

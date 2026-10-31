@@ -18,12 +18,19 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
-  <!-- 版本号：与 git tag 对齐（v1.0.0 → 1.0.0）。
+  <!-- 构建卫生：SkiaSharp / HarfBuzz / ANGLE 的原生包里，每个 RID 都带一份 .pdb（单份 80 MB 上下）。
+       框架依赖构建会把整棵 runtimes\**\native 复制进每个工程的 bin，本机 7 个工程会放大约 2 GB。
+       原生符号只对原生调试有用，托管调试用的是我们自己的 pdb，因此默认剔除；设 false 可恢复。 -->
+  <PropertyGroup>
+    <ExcludeNativeDebugSymbols Condition="'$(ExcludeNativeDebugSymbols)' == ''">true</ExcludeNativeDebugSymbols>
+  </PropertyGroup>
+
+  <!-- 版本号：与 git tag 对齐（v2.0.0 → 2.0.0）。
        NativeBootstrap 用 AssemblyInformationalVersion 命名原生库解压目录，改版本会换目录。 -->
   <PropertyGroup>
-    <Version>1.0.0</Version>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
+    <Version>2.0.0</Version>
+    <AssemblyVersion>2.0.0.0</AssemblyVersion>
+    <FileVersion>2.0.0.0</FileVersion>
     <Product>RePKG-Enhanced</Product>
     <Authors>dieraun</Authors>
     <Company>RePKG-Enhanced</Company>

@@ -127,3 +127,21 @@
 - **理由**：GitHub 的惯例是首页英文、本地语言另立文件（`README.<locale>.md`），这样仓库首屏对国际读者可读，同时中文读者一键切换；两版都放正文而非折叠块，避免单文件内中英文并列导致篇幅翻倍与锚点冲突（徽章里的 `#download` 只能指向一种语言）。
 - **影响**：任何 README 改动必须**同时改两个文件**（数据、命令、限制条目保持一致），否则会出现版本漂移；`docs/01-file-inventory.md` 已登记两份文件。
 - **状态**：已定（v1.0.0 之后）。
+
+## ADR-022 运行时语言切换：静态文案用 `DynamicResource`，动态文案用「键 + 参数」重渲染
+- **决策**：XAML 里的所有文案写成 `{DynamicResource key}`；ViewModel 里会随状态变化的消息（状态栏、进度、导出汇总）不再直接拼中文，而是 `SetStatus(key, args)` 存下键与参数、由 `RenderStatus()` 查表；换语言时 `LocalizationResources` 把整本文案字典从 `Application.Resources.MergedDictionaries` 摘下、清空、重灌、插回，再对每个 VM 调一次 `RefreshLanguage()`。
+- **理由**：Avalonia 的 `DynamicResource` 只在**资源字典集合**变化时重求值——只改字典内容不会刷新任何已绑定的控件，所以必须摘下再插回；而命令生成的文本（"已取消：成功 3 / ..."）没有绑定路径可刷新，只能保留键与参数、按当前语言重渲染。
+- **影响**：任何新增文案都必须进 `CatalogGui` 并同时给中英两值（单测断言两本字典键集合与占位符完全一致）；换语言立即生效、无需重启；副作用是 VM 与本地化耦合更紧（VM 构造必须拿到 `ILocalizer`）。
+- **状态**：已定（v2.0.0）。
+
+## ADR-023 系统语言探测绕开 `CultureInfo`：Windows API + 环境变量
+- **决策**：新增 `SystemLanguage.Detect()`：Windows 用 `GetUserDefaultUILanguage()` 取主语言 ID（`& 0x3FF`，`0x04` = 中文），类 Unix 读 `LC_ALL`/`LC_MESSAGES`/`LANG`，都拿不到才回退 `CultureInfo.CurrentUICulture.Name`。`AppLanguages.Resolve` 不再构造 `CultureInfo` 实例。
+- **理由**：项目开启 `InvariantGlobalization=true`（AOT 体积与行为稳定），该模式下 `new CultureInfo("zh-CN")` 直接抛 `CultureNotFoundException`，`CurrentUICulture.Name` 永远返回 `iv`——即「跟随系统」在中文 Windows 上也会静默变英文。这是实测暴露的**产品缺陷**，不是测试问题。
+- **影响**：首次启动能正确识别中文系统；单测里不能构造真实区域（用 `CultureInfo.InvariantCulture` 或 stub）。若将来关闭 invariant globalization，`Detect()` 的 API 分支仍优先，行为不变。
+- **状态**：已定（v2.0.0）。
+
+## ADR-024 更新检查：`Shared/Updates` 里一个可注入 `HttpClient` 的客户端，只有手动触发
+- **决策**：`UpdateChecker` 放在 `RePKG.Shared/Updates`（CLI 与 GUI 共用），`CheckAsync` 只发一次 `GET https://api.github.com/repos/dieraun/RePKG-Enhanced/releases/latest`，8 秒超时，结果用 `UpdateCheckResult`（含 `Error`）表达，不抛异常；版本比较由 `SemanticVersion.IsNewer` 做逐段数字比较；**绝不**在启动时调用。
+- **理由**：用户明确要求「纯离线本地运行、不要启动自动联网」，所以能力必须存在但触发点只有两处（关于窗口按钮、`repkg --check-update`）。把 `HttpMessageHandler` 做成可注入，测试才能覆盖「有新版 / 已最新 / 403 / 断网 / 坏 JSON」而完全不联网。
+- **影响**：`SettingsStore` 只存 `language`，不存「上次检查时间」——没有后台轮询也就没有时间戳需求；未认证 GitHub API 限 60 次/小时/IP，失败只提示原因。
+- **状态**：已定（v2.0.0）。

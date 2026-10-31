@@ -1,19 +1,24 @@
 // 基于 notscuffed/RePKG (MIT) 二次修改 —— 新增文件（RePKG-Enhanced）
 // 条目视图模型：只保存元数据（路径/长度/类型/勾选），不持有任何字节。
+// 2.0.0：类型名走本地化表，换语言时由 RefreshLanguage 通知刷新。
 
 using System;
 using CommunityToolkit.Mvvm.ComponentModel;
+using RePKG.Shared.Localization;
 
 namespace RePKG.Gui.ViewModels
 {
     public sealed partial class EntryViewModel : ObservableObject
     {
-        public EntryViewModel(string fullPath, long length)
+        private readonly ILocalizer? _localizer;
+
+        public EntryViewModel(string fullPath, long length, ILocalizer? localizer = null)
         {
             FullPath = fullPath;
             Length = length;
             Kind = EntryKinds.Classify(fullPath);
             DisplayName = fullPath;
+            _localizer = localizer;
         }
 
         public string FullPath { get; }
@@ -23,12 +28,21 @@ namespace RePKG.Gui.ViewModels
 
         public string LengthText => ByteSize.Format(Length);
 
-        public string KindText => Kind switch
+        public string KindText => _localizer?.Get(KindKey) ?? KindKey switch
         {
-            EntryKind.Image => "图片",
-            EntryKind.Text => "文本",
-            EntryKind.Video => "视频",
+            "gui.kind.image" => "图片",
+            "gui.kind.text" => "文本",
+            "gui.kind.video" => "视频",
             _ => "其它"
+        };
+
+        /// <summary>本地化键名，供界面与测试共用。</summary>
+        public string KindKey => Kind switch
+        {
+            EntryKind.Image => "gui.kind.image",
+            EntryKind.Text => "gui.kind.text",
+            EntryKind.Video => "gui.kind.video",
+            _ => "gui.kind.other"
         };
 
         /// <summary>三态：true 导出 / false 不导出 / null 未定（批量勾选时中间态）。</summary>
@@ -55,5 +69,8 @@ namespace RePKG.Gui.ViewModels
         public string Indent => Depth == 0 ? string.Empty : new string(' ', Depth * 2);
 
         public bool Matches(EntryKind kind) => kind == Kind;
+
+        /// <summary>换语言后刷新派生文案。</summary>
+        public void RefreshLanguage() => OnPropertyChanged(nameof(KindText));
     }
 }

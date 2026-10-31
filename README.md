@@ -13,7 +13,7 @@
 Built on [notscuffed/RePKG](https://github.com/notscuffed/RePKG) (MIT, no longer maintained) with **the minimum necessary changes**: fix the root cause of its "large file extraction fails" behaviour, and add a cross-platform Avalonia desktop UI.
 There is exactly one parser core and one export queue — **the CLI and the GUI share both**.
 
-![Main window (light)](docs/images/main-window-light.png)
+![Main window (light, English)](docs/images/main-window-en-light.png)
 
 ---
 
@@ -96,10 +96,19 @@ Working set is printed but never asserted — on a 7.9 GB machine it is perturbe
 - Export runs on **the exact same queue and streaming core as the CLI**, so pause, cancel, failure isolation and progress all come for free — there is no second implementation.
 - Light/dark theme follows the system; all XAML is compiled into the binary (an AOT requirement); no animations, no cloud sync.
 
-![Main window (dark)](docs/images/main-window-dark.png)
+![Main window (dark, English)](docs/images/main-window-en-dark.png)
 
-### 5. Single file, zero dependencies
-`repkg.exe` (13.7 MiB) and `RePKG-Enhanced.exe` (35.4 MiB) are **NativeAOT single files**: the .NET runtime plus the SkiaSharp / HarfBuzz / ANGLE native libraries are all embedded, so they just run — no .NET installation on the target machine.
+### 5. Bilingual UI, About, and a manual update check (2.0)
+- The **GUI and the CLI are fully bilingual (Simplified Chinese / English)**. On first start the language follows the system setting; afterwards your choice is remembered in `%APPDATA%\RePKG-Enhanced\settings.json`.
+- Switching the language in the GUI takes effect **immediately** — no restart: every label is a `DynamicResource` looked up in a dictionary that is swapped on the fly.
+- The CLI picks the language from `--lang zh|en`, then `REPKG_LANG`, then `settings.json`, then the system. `repkg --lang en --help` prints the English help.
+- **About** shows the build version, informational version, author, repository, license and runtime, and has a **Check for updates** button that compares against the latest GitHub release.
+- **Everything stays offline by default**: nothing ever touches the network at startup. Only that button (or `repkg --check-update`) performs a single request to the GitHub API.
+
+![About window](docs/images/about-en.png)
+
+### 6. Single file, zero dependencies
+`repkg.exe` (~14 MiB) and `RePKG-Enhanced.exe` (~35 MiB) are **NativeAOT single files**: the .NET runtime plus the SkiaSharp / HarfBuzz / ANGLE native libraries are all embedded, so they just run — no .NET installation on the target machine.
 
 ---
 
@@ -156,6 +165,8 @@ Common options:
 | `--no-tex-convert` | Export `.tex` untouched instead of converting |
 | `--overwrite` / `--no-log` / `--manifest` | Overwrite existing files / skip the log / write a resource manifest |
 | `--concurrency <n>` / `--queue-capacity <n>` | Packages processed at once (default 1) / queue limit (default 64) |
+| `--lang <zh\|en>` | Output language for this run (overrides `REPKG_LANG` and `settings.json`) |
+| `--check-update` | Ask GitHub for the latest release (the **only** command that uses the network) |
 
 **Exit codes**: `0` all succeeded · `1` some items failed · `2` usage error · `130` interrupted by the user.
 
@@ -180,7 +191,8 @@ out\
 ## GUI
 
 1. Double-click `RePKG-Enhanced.exe` (the first start extracts the native libraries — see the notes).
-2. Use "添加 pkg" / "添加目录", or simply drop `.pkg` files onto the window.
+2. Use "Add pkg" / "Add folder", or simply drop `.pkg` files onto the window.
+   The **Language** menu (System / 简体中文 / English) switches the whole interface instantly, and **About** carries version info plus the manual update check.
 3. Tick entries in the middle pane as needed; the filter at the top right narrows it to images/text/videos, and the right pane previews the selection live.
 4. Choose an output directory → tick the options (recursive subdirectories / overwrite / TEX to PNG·GIF / write .json metadata / write manifest / concurrency) → "开始导出".
 5. While exporting you can pause, resume or cancel; the progress bar and status line show the current package, current entry, cumulative bytes and failure count.
@@ -205,7 +217,7 @@ $env:REPKG_BIG_TMP   = 'D:\tmp\repkg-bigfiles'
 dotnet test tests\RePKG.Tests.BigFiles -c Release
 ```
 
-Current test size: `RePKG.Tests` 40 + `RePKG.Tests.Shared` 63 + `RePKG.Tests.Cli` 13 + `RePKG.Tests.Gui` 15 = **131 unit/integration tests**, plus 2 large-file gates.
+Current test size: `RePKG.Tests` 40 + `RePKG.Tests.Shared` 113 + `RePKG.Tests.Cli` 19 + `RePKG.Tests.Gui` 26 = **198 unit/integration tests**, plus 2 large-file gates.
 
 ### Publishing (Windows x64, NativeAOT single file)
 
@@ -267,7 +279,9 @@ DXT1/3/5 decoding is the managed implementation that shipped with upstream RePKG
 7. **A `.pdb` is produced** by AOT compilation; it is not distributed with releases (only the executables and the checksum file are attached).
 8. **Not supported**: cloud sync, online workshop downloads, **writing back / repacking** a pkg, and the `interactive` mode.
 9. **No end-to-end regression against real workshop packages** — the test packages are synthetic (covering malformed, truncated, path-traversal and very large entries). If a specific package fails to parse, an issue with the output of `repkg info` is the fastest way to get it looked at.
-10. **The user interface and console output are currently Chinese only** (the CLI's option names are English). This English README is a translation of [README.zh-CN.md](README.zh-CN.md); if you need an English UI, that is a separate piece of work and not part of v1.0.0.
+10. **The language follows the system on first start, not the installer.** Detection uses the Windows UI language (falling back to `LANG` on Unix); if it guesses wrong, pick the language in the **Language** menu (GUI) or pass `--lang` (CLI) — the choice is saved.
+11. **The update check is manual and online-only on demand.** Nothing is downloaded or installed: the About window (or `repkg --check-update`) performs one HTTPS request to the GitHub releases API and shows the result. Offline, it simply reports that it could not reach GitHub.
+12. **`settings.json` lives in `%APPDATA%\RePKG-Enhanced\`** and holds a single field (`language`). Delete the file to fall back to "follow the system".
 
 ---
 
@@ -292,4 +306,5 @@ DXT1/3/5 decoding is the managed implementation that shipped with upstream RePKG
 | [Stage 4: TEX stack and CLI](docs/04-cli-and-textures.md) | SkiaSharp migration, self-written GIF encoder, CLI semantics |
 | [Stage 5: GUI and manifest](docs/05-gui.md) | Avalonia 12 UI, headless rendering tests, manifest |
 | [Stage 6: publishing and CI](docs/06-publish-and-ci.md) | AOT single-file approach, embedded native libraries, release pipeline |
-| [Decision records](docs/DECISIONS.md) | 20 ADRs: the "why not that" behind every choice |
+| [Stage 7: v2.0.0 — i18n and update check](docs/07-i18n-and-updates.md) | Runtime language switching, settings persistence, offline-first update check |
+| [Decision records](docs/DECISIONS.md) | 24 ADRs: the "why not that" behind every choice |

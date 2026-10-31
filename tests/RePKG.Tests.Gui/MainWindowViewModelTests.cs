@@ -9,6 +9,8 @@ using System.Threading.Tasks;
 using Avalonia.Headless.XUnit;
 using RePKG.Gui.Services;
 using RePKG.Gui.ViewModels;
+using RePKG.Shared.Localization;
+using RePKG.Shared.Settings;
 using RePKG.TestSupport;
 using Xunit;
 
@@ -39,6 +41,15 @@ namespace RePKG.Tests.Gui
             public Task<string?> PickFolderAsync(string title) => Task.FromResult(Folder);
 
             public void RevealInFileManager(string path) => Revealed.Add(path);
+
+            public Task ShowAboutAsync()
+            {
+                AboutShown++;
+
+                return Task.CompletedTask;
+            }
+
+            public int AboutShown { get; private set; }
         }
 
         private string CreatePackage(string name, params (string Path, byte[] Bytes)[] entries)
@@ -53,8 +64,13 @@ namespace RePKG.Tests.Gui
         {
             dialogs = new FakeDialogs();
 
-            // post 同步执行，避免测试里等 Dispatcher
-            return new MainWindowViewModel(dialogs, action => action());
+            // post 同步执行，避免测试里等 Dispatcher；语言固定为中文，
+            // 让断言不依赖跑测试的机器 culture（默认 System 在英文机器上会解析成 English）。
+            return new MainWindowViewModel(
+                dialogs,
+                new Localizer(language: AppLanguage.Chinese),
+                SettingsStore.InMemory(),
+                action => action());
         }
 
         [AvaloniaFact]

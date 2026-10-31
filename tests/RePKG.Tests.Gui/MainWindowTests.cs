@@ -14,9 +14,12 @@ using Avalonia.Input.Raw;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
+using RePKG.Gui.Localization;
 using RePKG.Gui.Services;
 using RePKG.Gui.ViewModels;
 using RePKG.Gui.Views;
+using RePKG.Shared.Localization;
+using RePKG.Shared.Settings;
 using RePKG.TestSupport;
 using SkiaSharp;
 using Xunit;
@@ -47,6 +50,8 @@ namespace RePKG.Tests.Gui
             public void RevealInFileManager(string path)
             {
             }
+
+            public Task ShowAboutAsync() => Task.CompletedTask;
         }
 
         private string CreateSamplePackage()
@@ -101,23 +106,34 @@ namespace RePKG.Tests.Gui
         }
 
         [AvaloniaTheory]
-        [InlineData("light")]
-        [InlineData("dark")]
-        public async Task MainWindow_RendersBothThemeVariants(string name)
+        [InlineData("light", "zh")]
+        [InlineData("dark", "zh")]
+        [InlineData("light", "en")]
+        [InlineData("dark", "en")]
+        public async Task MainWindow_RendersBothThemeVariantsInBothLanguages(string themeName, string languageName)
         {
-            var variant = name == "dark" ? ThemeVariant.Dark : ThemeVariant.Light;
+            var variant = themeName == "dark" ? ThemeVariant.Dark : ThemeVariant.Light;
+            var language = languageName == "zh" ? AppLanguage.Chinese : AppLanguage.English;
 
-            var (window, _) = await CreateWindowAsync();
+            var localizer = new Localizer(language: language);
+            LocalizationResources.Apply(Avalonia.Application.Current!, localizer);
+
+            var viewModel = new MainWindowViewModel(new FakeDialogs(), localizer, SettingsStore.InMemory(), action => action());
+            await viewModel.LoadAsync(new[] { CreateSamplePackage() });
+            viewModel.OutputDirectory = Path.Combine(_root, "out");
+
+            var window = new MainWindow { DataContext = viewModel };
+            window.Show();
 
             Avalonia.Application.Current!.RequestedThemeVariant = variant;
 
-            // 主题切换后重新渲染
+            // 主题/语言切换后重新渲染
             var frame = window.CaptureRenderedFrame();
             Assert.NotNull(frame);
 
             Directory.CreateDirectory(ArtifactDirectory);
 
-            var path = Path.Combine(ArtifactDirectory, $"main-window-{name}.png");
+            var path = Path.Combine(ArtifactDirectory, $"main-window-{languageName}-{themeName}.png");
 
 #pragma warning disable CS0618 // Bitmap.Save(string) 已标记过时，但截图落盘用它最简单
             frame!.Save(path);
@@ -127,7 +143,7 @@ namespace RePKG.Tests.Gui
 
             // 像素统计确认「浅色 / 深色」确实不同：深色底色更暗
             var average = AverageBrightness(path);
-            Assert.True(name == "dark" ? average < 200 : average > 40, $"{name} 平均亮度 {average:0.0}");
+            Assert.True(themeName == "dark" ? average < 200 : average > 40, $"{themeName} 平均亮度 {average:0.0}");
 
             window.Close();
         }
@@ -156,6 +172,37 @@ namespace RePKG.Tests.Gui
             Assert.Single(viewModel.Packages);
             Assert.Equal("Neon Night", viewModel.Packages[0].Title);
 
+            window.Close();
+        }
+
+        [AvaloniaTheory]
+        [InlineData("zh")]
+        [InlineData("en")]
+        public async Task AboutWindow_RendersInBothLanguages(string languageName)
+        {
+            var language = languageName == "zh" ? AppLanguage.Chinese : AppLanguage.English;
+            var localizer = new Localizer(language: language);
+            LocalizationResources.Apply(Avalonia.Application.Current!, localizer);
+
+            using var aboutViewModel = new AboutWindowViewModel(localizer);
+            var window = new AboutWindow { DataContext = aboutViewModel };
+            window.Show();
+
+            Avalonia.Application.Current!.RequestedThemeVariant = ThemeVariant.Light;
+
+            var frame = window.CaptureRenderedFrame();
+            Assert.NotNull(frame);
+
+            Directory.CreateDirectory(ArtifactDirectory);
+            var path = Path.Combine(ArtifactDirectory, $"about-{languageName}.png");
+
+#pragma warning disable CS0618
+            frame!.Save(path);
+#pragma warning restore CS0618
+
+            Assert.True(new FileInfo(path).Length > 3000, "关于窗口截图太小");
+
+            await Task.CompletedTask;
             window.Close();
         }
 

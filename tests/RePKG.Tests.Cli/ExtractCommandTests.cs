@@ -349,7 +349,12 @@ namespace RePKG.Tests.Cli
         {
             var writer = new StringWriter();
             var error = new StringWriter();
-            var exitCode = CliApp.Run(args, writer, error);
+
+            // 统一固定中文，避免断言依赖跑测试机器的系统语言（2.0.0 起文案可切换）
+            var full = new List<string>(args.Length + 2) { "--lang", "zh" };
+            full.AddRange(args);
+
+            var exitCode = CliApp.Run(full.ToArray(), writer, error);
 
             return new RunResult
             {

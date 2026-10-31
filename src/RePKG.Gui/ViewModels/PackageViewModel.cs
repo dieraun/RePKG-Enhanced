@@ -5,19 +5,27 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using RePKG.Shared.Localization;
 
 namespace RePKG.Gui.ViewModels
 {
     public sealed partial class PackageViewModel : ObservableObject
     {
         private bool _suppressSelectionPropagation;
+        private readonly ILocalizer? _localizer;
 
-        public PackageViewModel(string path, string? title, IReadOnlyList<EntryViewModel> entries, long packageSize)
+        public PackageViewModel(
+            string path,
+            string? title,
+            IReadOnlyList<EntryViewModel> entries,
+            long packageSize,
+            ILocalizer? localizer = null)
         {
             Path = path;
             Title = string.IsNullOrWhiteSpace(title) ? null : title!.Trim();
             Entries = entries;
             PackageSize = packageSize;
+            _localizer = localizer;
 
             foreach (var entry in entries)
                 entry.PropertyChanged += OnEntryPropertyChanged;
@@ -50,7 +58,8 @@ namespace RePKG.Gui.ViewModels
             }
         }
 
-        public string Summary => $"{EntryCount} 个条目 · {ByteSize.Format(TotalBytes)}";
+        public string Summary => _localizer?.Format("gui.package.summary", EntryCount, ByteSize.Format(TotalBytes))
+                                 ?? $"{EntryCount} 个条目 · {ByteSize.Format(TotalBytes)}";
 
         public string PathText => Path;
 
@@ -125,6 +134,15 @@ namespace RePKG.Gui.ViewModels
         {
             foreach (var entry in Entries)
                 entry.PropertyChanged -= OnEntryPropertyChanged;
+        }
+
+        /// <summary>换语言后刷新派生文案（本包与所有条目）。</summary>
+        public void RefreshLanguage()
+        {
+            OnPropertyChanged(nameof(Summary));
+
+            foreach (var entry in Entries)
+                entry.RefreshLanguage();
         }
 
         private void OnEntryPropertyChanged(object? sender, PropertyChangedEventArgs e)

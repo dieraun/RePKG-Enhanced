@@ -30,6 +30,11 @@
     <ProjectReference Include="..\RePKG.Shared\RePKG.Shared.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- 无头测试要直接验证内部实现（资源字典装载、关于窗口视图模型） -->
+    <InternalsVisibleTo Include="RePKG.Tests.Gui" />
+  </ItemGroup>
+
   <Import Project="..\..\build\NativeBundle.targets" />
 
 </Project>

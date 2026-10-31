@@ -1,0 +1,54 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:RePKG.Gui.ViewModels"
+        x:Class="RePKG.Gui.Views.AboutWindow"
+        x:DataType="vm:AboutWindowViewModel"
+        Title="{Binding Title}"
+        Width="560"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+  <StackPanel Margin="24" Spacing="12">
+    <StackPanel Spacing="2">
+      <TextBlock Text="{Binding ProductName}" FontSize="22" FontWeight="SemiBold" />
+      <TextBlock Text="{Binding Tagline}" Opacity="0.75" />
+    </StackPanel>
+
+    <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Opacity="0.85" />
+
+    <Grid ColumnDefinitions="140,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" >
+      <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding VersionLabel}" Opacity="0.7" Margin="0,3" />
+      <SelectableTextBlock Grid.Row="0" Grid.Column="1" Text="{Binding VersionValue}" Margin="0,3" />
+
+      <TextBlock Grid.Row="1" Grid.Column="0" Text="{Binding InformationalLabel}" Opacity="0.7" Margin="0,3" />
+      <SelectableTextBlock Grid.Row="1" Grid.Column="1" Text="{Binding InformationalValue}" Margin="0,3" TextWrapping="Wrap" />
+
+      <TextBlock Grid.Row="2" Grid.Column="0" Text="{Binding AuthorLabel}" Opacity="0.7" Margin="0,3" />
+      <SelectableTextBlock Grid.Row="2" Grid.Column="1" Text="{Binding AuthorValue}" Margin="0,3" />
+
+      <TextBlock Grid.Row="3" Grid.Column="0" Text="{Binding RepositoryLabel}" Opacity="0.7" Margin="0,3" />
+      <SelectableTextBlock Grid.Row="3" Grid.Column="1" Text="{Binding RepositoryValue}" Margin="0,3" TextWrapping="Wrap" />
+
+      <TextBlock Grid.Row="4" Grid.Column="0" Text="{Binding LicenseLabel}" Opacity="0.7" Margin="0,3" />
+      <SelectableTextBlock Grid.Row="4" Grid.Column="1" Text="{Binding LicenseValue}" Margin="0,3" TextWrapping="Wrap" />
+
+      <TextBlock Grid.Row="5" Grid.Column="0" Text="{Binding BuildLabel}" Opacity="0.7" Margin="0,3" />
+      <SelectableTextBlock Grid.Row="5" Grid.Column="1" Text="{Binding BuildValue}" Margin="0,3" TextWrapping="Wrap" />
+
+      <TextBlock Grid.Row="6" Grid.Column="0" Text="{Binding RuntimeLabel}" Opacity="0.7" Margin="0,3" />
+      <SelectableTextBlock Grid.Row="6" Grid.Column="1" Text="{Binding RuntimeValue}" Margin="0,3" TextWrapping="Wrap" />
+
+      <TextBlock Grid.Row="7" Grid.Column="0" Text="{Binding NetworkLabel}" Opacity="0.7" Margin="0,3" />
+      <SelectableTextBlock Grid.Row="7" Grid.Column="1" Text="{Binding NetworkValue}" Margin="0,3" TextWrapping="Wrap" />
+    </Grid>
+
+    <TextBlock Text="{Binding UpdateStatus}" TextWrapping="Wrap" Opacity="0.85" IsVisible="{Binding UpdateStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+    <WrapPanel HorizontalAlignment="Right" ItemHeight="34" Orientation="Horizontal">
+      <Button Content="{Binding CheckUpdateText}" Command="{Binding CheckUpdateCommand}" Margin="0,0,8,0" />
+      <Button Content="{Binding OpenReleaseText}" Command="{Binding OpenReleaseCommand}" Margin="0,0,8,0" />
+      <Button Content="{Binding OpenRepositoryText}" Command="{Binding OpenRepositoryCommand}" Margin="0,0,8,0" />
+      <Button Content="{Binding CloseText}" Click="OnCloseClick" />
+    </WrapPanel>
+  </StackPanel>
+</Window>

@@ -1,24 +1,29 @@
 // 基于 notscuffed/RePKG (MIT) 二次修改 —— 新增文件（RePKG-Enhanced）
 // 控制台输出：进度行节流（避免每 16 MiB 刷一行把终端拖死），结果与汇总分行输出。
+// 2.0.0：文案全部走本地化表，中英各一套。
 
 using System;
+using System.Globalization;
 using System.IO;
 using RePKG.Shared.Export;
+using RePKG.Shared.Localization;
 
 namespace RePKG.Cli
 {
     public sealed class ConsoleReporter
     {
         private readonly TextWriter _out;
+        private readonly ILocalizer _localizer;
         private readonly bool _interactive;
         private readonly object _gate = new object();
 
         private DateTime _lastProgress = DateTime.MinValue;
         private bool _lineOpen;
 
-        public ConsoleReporter(TextWriter output, bool interactive)
+        public ConsoleReporter(TextWriter output, bool interactive, ILocalizer localizer)
         {
             _out = output ?? throw new ArgumentNullException(nameof(output));
+            _localizer = localizer ?? throw new ArgumentNullException(nameof(localizer));
             _interactive = interactive;
         }
 
@@ -39,8 +44,15 @@ namespace RePKG.Cli
                     : progress.EntriesDone * 100.0 / progress.EntriesTotal;
 
                 _out.Write('\r');
-                _out.Write($"  [{progress.PackagesDone + 1}/{Math.Max(progress.PackagesTotal, 1)}] ");
-                _out.Write($"{progress.EntriesDone}/{progress.EntriesTotal} ({percent:0.0}%) ");
+                _out.Write("  ");
+                _out.Write(_localizer.Format(
+                    "cli.report.progress",
+                    progress.PackagesDone + 1,
+                    Math.Max(progress.PackagesTotal, 1),
+                    progress.EntriesDone,
+                    progress.EntriesTotal,
+                    percent));
+                _out.Write(' ');
                 _out.Write(Truncate(progress.CurrentEntry ?? string.Empty, 48));
                 _out.Write("                    ");
                 _lineOpen = true;
@@ -54,15 +66,22 @@ namespace RePKG.Cli
                 ClearLine();
 
                 var name = Path.GetFileName(result.PackagePath);
-                var status = result.FatalError == null ? "完成" : "失败";
+                var status = _localizer.Get(result.FatalError == null ? "cli.report.done" : "cli.report.failed");
+                var duration = result.Duration.TotalSeconds.ToString("0.0", CultureInfo.CurrentCulture) + "s";
 
                 _out.WriteLine(
                     $"[{status}] {name} → {result.OutputDirectory}  " +
-                    $"成功 {result.Succeeded} / 跳过 {result.Skipped} / 失败 {result.Failed} / 取消 {result.Canceled}，" +
-                    $"{FormatBytes(result.BytesWritten)}，{result.Duration.TotalSeconds:0.0}s");
+                    _localizer.Format(
+                        "cli.report.counts",
+                        result.Succeeded,
+                        result.Skipped,
+                        result.Failed,
+                        result.Canceled,
+                        FormatBytes(result.BytesWritten),
+                        duration));
 
                 if (result.FatalError != null)
-                    _out.WriteLine($"       原因：{result.FatalError}");
+                    _out.WriteLine(_localizer.Format("cli.report.reason", result.FatalError));
             }
         }
 
@@ -72,11 +91,18 @@ namespace RePKG.Cli
             {
                 ClearLine();
 
+                var duration = summary.Duration.TotalSeconds.ToString("0.0", CultureInfo.CurrentCulture) + "s";
+
                 _out.WriteLine();
-                _out.WriteLine(
-                    $"汇总：{summary.Packages} 个包，成功 {summary.Succeeded} / 跳过 {summary.Skipped} / " +
-                    $"失败 {summary.Failed} / 取消 {summary.Canceled}，共 {FormatBytes(summary.BytesWritten)}，" +
-                    $"{summary.Duration.TotalSeconds:0.0}s");
+                _out.WriteLine(_localizer.Format(
+                    "cli.report.summary",
+                    summary.Packages,
+                    summary.Succeeded,
+                    summary.Skipped,
+                    summary.Failed,
+                    summary.Canceled,
+                    FormatBytes(summary.BytesWritten),
+                    duration));
             }
         }
 

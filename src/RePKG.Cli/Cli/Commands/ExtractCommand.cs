@@ -1,6 +1,7 @@
 // 基于 notscuffed/RePKG (MIT) 二次修改 —— 新增文件（RePKG-Enhanced）
 // extract 子命令：解析输入 → 构造 ExportOptions → 全部交给同一个 ExportQueue。
 // 入口层在这里只做"发现输入 + 打印结果"，条目循环一行都没有。
+// 2.0.0：文案走本地化表。
 
 using System;
 using System.Collections.Generic;
@@ -9,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using RePKG.Application.Package;
 using RePKG.Shared.Export;
+using RePKG.Shared.Localization;
 using RePKG.Shared.Logging;
 using RePKG.Shared.Paths;
 
@@ -19,10 +21,11 @@ namespace RePKG.Cli
         public static async Task<ExitCode> RunAsync(
             CliOptions options,
             TextWriter output,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            ILocalizer localizer)
         {
-            var reporter = new ConsoleReporter(output, interactive: !Console.IsOutputRedirected);
-            var packages = InputResolver.CollectPackages(options.Inputs, options.Recursive);
+            var reporter = new ConsoleReporter(output, interactive: !Console.IsOutputRedirected, localizer);
+            var packages = InputResolver.CollectPackages(options.Inputs, options.Recursive, localizer);
             var outputRoot = Path.GetFullPath(options.Output ?? "output");
 
             var exportOptions = new ExportOptions
@@ -47,8 +50,9 @@ namespace RePKG.Cli
 
                 using (cancellationToken.Register(state => ((ExportQueue) state!).Control.Cancel(), queue))
                 {
-                    reporter.Info($"共 {packages.Count} 个 pkg → {outputRoot}" +
-                                  (converter == null ? "（不转换 TEX）" : "（TEX 转 PNG/GIF/MP4）"));
+                    reporter.Info(
+                        localizer.Format("cli.extracting", packages.Count, outputRoot) +
+                        localizer.Get(converter == null ? "cli.extract.noConvert" : "cli.extract.convert"));
 
                     var jobs = new List<Task<ExportJobResult>>(packages.Count);
 
@@ -68,7 +72,7 @@ namespace RePKG.Cli
                         }
                         catch (Exception ex) when (ex is IOException || ex is InvalidDataException || ex is UnauthorizedAccessException)
                         {
-                            reporter.Error($"[跳过] {Path.GetFileName(package)}：{ex.Message}");
+                            reporter.Error(localizer.Format("cli.extract.skipped", Path.GetFileName(package), ex.Message));
                             continue;
                         }
 

@@ -1,5 +1,6 @@
 // 基于 notscuffed/RePKG (MIT) 二次修改 —— 新增文件（RePKG-Enhanced）
 // IDialogService 的 Avalonia 实现：文件选择用 StorageProvider，定位用平台默认打开方式。
+// 2.0.0：文件选择标题走本地化；新增「关于」对话框（延迟创建，避免启动即构造更新检查器）。
 
 using System;
 using System.Collections.Generic;
@@ -9,28 +10,34 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
+using RePKG.Gui.ViewModels;
+using RePKG.Gui.Views;
+using RePKG.Shared.Localization;
 
 namespace RePKG.Gui.Services
 {
     public sealed class StorageDialogService : IDialogService
     {
         private readonly Window _owner;
+        private readonly ILocalizer _localizer;
+        private AboutWindowViewModel? _about;
 
-        public StorageDialogService(Window owner)
+        public StorageDialogService(Window owner, ILocalizer localizer)
         {
             _owner = owner ?? throw new ArgumentNullException(nameof(owner));
+            _localizer = localizer ?? throw new ArgumentNullException(nameof(localizer));
         }
 
         public async Task<IReadOnlyList<string>> PickPackagesAsync()
         {
             var files = await _owner.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
-                Title = "选择 pkg 文件（可多选）",
+                Title = _localizer.Get("gui.dialog.pickPackages"),
                 AllowMultiple = true,
                 FileTypeFilter = new[]
                 {
-                    new FilePickerFileType("Wallpaper Engine 包") { Patterns = new[] {"*.pkg"} },
-                    new FilePickerFileType("所有文件") { Patterns = new[] {"*"} }
+                    new FilePickerFileType("Wallpaper Engine pkg") { Patterns = new[] {"*.pkg"} },
+                    new FilePickerFileType(_localizer.Get("gui.dialog.allFiles")) { Patterns = new[] {"*"} }
                 }
             }).ConfigureAwait(true);
 
@@ -59,6 +66,31 @@ namespace RePKG.Gui.Services
                 return null;
 
             return folders[0].TryGetLocalPath();
+        }
+
+        public async Task ShowAboutAsync()
+        {
+            _about ??= new AboutWindowViewModel(_localizer, OpenExternalAsync);
+
+            var window = new AboutWindow { DataContext = _about };
+
+            if (_owner.IsVisible)
+                await window.ShowDialog(_owner).ConfigureAwait(true);
+        }
+
+        private Task OpenExternalAsync(string url)
+        {
+            try
+            {
+                if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                    return _owner.Launcher.LaunchUriAsync(uri);
+            }
+            catch
+            {
+                // 打不开浏览器不影响其他功能
+            }
+
+            return Task.CompletedTask;
         }
 
         public void RevealInFileManager(string path)

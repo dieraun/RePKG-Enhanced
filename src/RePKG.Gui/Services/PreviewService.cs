@@ -1,6 +1,7 @@
 // 基于 notscuffed/RePKG (MIT) 二次修改 —— 新增文件（RePKG-Enhanced）
 // 预览服务：TEX 用内核的 SkiaSharp 转换器转成 PNG 字节；文本条目最多读 64 KiB。
 // 预览只在用户点选条目时发生，且每次只读一个条目 → 内存与 pkg 体积无关。
+// 2.0.0：提示文案走本地化表（调用方把当前 ILocalizer 传进来）。
 
 using System;
 using System.IO;
@@ -8,6 +9,7 @@ using System.Text;
 using RePKG.Application.Package;
 using RePKG.Application.Texture;
 using RePKG.Gui.ViewModels;
+using RePKG.Shared.Localization;
 
 namespace RePKG.Gui.Services
 {
@@ -29,30 +31,30 @@ namespace RePKG.Gui.Services
     {
         public const int TextPreviewLimit = 64 * 1024;
 
-        public static PreviewData Load(string packagePath, string fullPath, EntryKind kind)
+        public static PreviewData Load(string packagePath, string fullPath, EntryKind kind, ILocalizer localizer)
         {
             using var source = PackageFileSource.Open(packagePath);
             var entry = source.FindEntry(fullPath);
 
             if (entry == null)
-                return new PreviewData(note: "条目已不在包内");
+                return new PreviewData(note: localizer.Get("gui.preview.entryMissing"));
 
             using var stream = source.OpenEntry(entry);
 
             switch (kind)
             {
                 case EntryKind.Text:
-                    return new PreviewData(text: ReadText(stream, entry.Length));
+                    return new PreviewData(text: ReadText(stream, entry.Length, localizer));
 
                 case EntryKind.Image:
-                    return LoadImage(stream, entry.FullPath);
+                    return LoadImage(stream, entry.FullPath, localizer);
 
                 default:
-                    return new PreviewData(note: $"{kind} 条目，共 {FormatBytes(entry.Length)}，无内联预览");
+                    return new PreviewData(note: localizer.Format("gui.preview.binary", FormatBytes(entry.Length)));
             }
         }
 
-        public static string ReadText(Stream stream, long length)
+        public static string ReadText(Stream stream, long length, ILocalizer localizer)
         {
             var take = (int) Math.Min(length, TextPreviewLimit);
             var buffer = new byte[take];
@@ -71,12 +73,12 @@ namespace RePKG.Gui.Services
             var text = Encoding.UTF8.GetString(buffer, 0, read);
 
             if (length > TextPreviewLimit)
-                text += $"\n\n--- 已截断：仅显示前 {FormatBytes(TextPreviewLimit)}，条目共 {FormatBytes(length)} ---";
+                text += Environment.NewLine + Environment.NewLine + localizer.Get("gui.preview.truncated");
 
             return text;
         }
 
-        private static PreviewData LoadImage(Stream stream, string fullPath)
+        private static PreviewData LoadImage(Stream stream, string fullPath, ILocalizer localizer)
         {
             var extension = Path.GetExtension(fullPath);
 
@@ -101,7 +103,7 @@ namespace RePKG.Gui.Services
                 return new PreviewData(imageBytes: output.ToArray());
             }
 
-            return new PreviewData(note: $"该 TEX 转出格式为 {format}，暂不支持内联预览");
+            return new PreviewData(note: localizer.Format("gui.preview.texUnsupported", format));
         }
 
         public static string FormatBytes(long bytes)

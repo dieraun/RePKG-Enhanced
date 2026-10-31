@@ -13,7 +13,7 @@
 基于 [notscuffed/RePKG](https://github.com/notscuffed/RePKG)（MIT，已停更）做**最小必要改动**：修掉它「大文件提取失败」的根因，并补上一个跨平台的 Avalonia 桌面界面。
 解析内核与导出队列只有一份，**CLI 与 GUI 共用**。
 
-![主窗口（浅色）](docs/images/main-window-light.png)
+![主窗口（浅色，中文）](docs/images/main-window-zh-light.png)
 
 ---
 
@@ -96,10 +96,19 @@ Assert.True(allocated < 32 * 1024 * 1024);   // 实测 1.0 MiB
 - 导出走**和 CLI 完全相同的队列与流式内核**，因此暂停、取消、失败隔离、进度全都有，没有第二套实现。
 - 明暗主题跟随系统；XAML 全部编译进程序（AOT 要求），无动画、无云同步。
 
-![主窗口（深色）](docs/images/main-window-dark.png)
+![主窗口（深色，中文）](docs/images/main-window-zh-dark.png)
 
-### 5. 单文件、零依赖
-`repkg.exe`（13.7 MiB）与 `RePKG-Enhanced.exe`（35.4 MiB）都是 **NativeAOT 单文件**：.NET 运行时、SkiaSharp / HarfBuzz / ANGLE 的原生库全部内嵌，解压即用，目标机器不需要装 .NET。
+### 5. 中英双语 + 关于窗口 + 手动检查更新（2.0）
+- **GUI 与 CLI 全量中英双语**。首次启动跟随系统语言，之后记住你的选择（存在 `%APPDATA%\RePKG-Enhanced\settings.json`）。
+- GUI 里切语言**立即生效**、无需重启：所有文案都是 `DynamicResource`，换语言时整本资源字典被替换。
+- CLI 的语言来源依次是 `--lang zh|en` → 环境变量 `REPKG_LANG` → `settings.json` → 系统。`repkg --lang en --help` 输出英文帮助。
+- **关于**窗口显示构建版本、完整版本号、作者、仓库、许可、运行环境，并提供「检查更新」按钮，对比 GitHub 最新 Release。
+- **默认全程离线**：启动时绝不联网。只有点那个按钮（或 `repkg --check-update`）才会向 GitHub API 发一次请求。
+
+![关于窗口](docs/images/about-zh.png)
+
+### 6. 单文件、零依赖
+`repkg.exe`（约 14 MiB）与 `RePKG-Enhanced.exe`（约 35 MiB）都是 **NativeAOT 单文件**：.NET 运行时、SkiaSharp / HarfBuzz / ANGLE 的原生库全部内嵌，解压即用，目标机器不需要装 .NET。
 
 ---
 
@@ -156,6 +165,8 @@ repkg tex quad.tex -o out
 | `--no-tex-convert` | 不转换 TEX，原样导出 `.tex` |
 | `--overwrite` / `--no-log` / `--manifest` | 覆盖已有文件 / 不写日志 / 写资源清单 |
 | `--concurrency <n>` / `--queue-capacity <n>` | 同时处理的包数（默认 1）/ 排队上限（默认 64） |
+| `--lang <zh\|en>` | 本次运行的语言（优先于 `REPKG_LANG` 与 `settings.json`） |
+| `--check-update` | 向 GitHub 查询最新版本（**唯一**会联网的命令） |
 
 **退出码**：`0` 全部成功 · `1` 有失败项 · `2` 参数错误 · `130` 被用户中断。
 
@@ -181,6 +192,7 @@ out\
 
 1. 双击 `RePKG-Enhanced.exe`（首次启动会解压原生库，见注意事项）。
 2. 「添加 pkg」/「添加目录」，或直接把 `.pkg` 拖进窗口。
+   **语言**菜单（跟随系统 / 简体中文 / English）即时切换整个界面，**关于**窗口里有版本信息与手动更新检查。
 3. 中间栏按需勾选条目，右上角筛选可只看图片/文本/视频；右侧实时预览。
 4. 选输出目录 → 勾选选项（递归子目录 / 覆盖已有文件 / TEX 转 PNG·GIF / 写 .json 元信息 / 写 manifest 清单 / 并发数）→「开始导出」。
 5. 导出中可「暂停 / 继续 / 取消」；进度条与状态栏显示当前包、当前条目、累计字节与失败数。
@@ -205,7 +217,7 @@ $env:REPKG_BIG_TMP   = 'D:\tmp\repkg-bigfiles'
 dotnet test tests\RePKG.Tests.BigFiles -c Release
 ```
 
-当前测试规模：`RePKG.Tests` 40 + `RePKG.Tests.Shared` 63 + `RePKG.Tests.Cli` 13 + `RePKG.Tests.Gui` 15 = **131 个单元/集成测试**，外加 2 个大文件门禁。
+当前测试规模：`RePKG.Tests` 40 + `RePKG.Tests.Shared` 113 + `RePKG.Tests.Cli` 19 + `RePKG.Tests.Gui` 26 = **198 个单元/集成测试**，外加 2 个大文件门禁。
 
 ### 发布（Windows x64，NativeAOT 单文件）
 
@@ -267,7 +279,9 @@ DXT1/3/5 解码是原版 RePKG 自带的托管实现，没有引入额外原生�
 7. **产物里会有 `.pdb`**：AOT 编译产生，不随 Release 分发（Release 只挂 exe 与校验和）。
 8. **不支持**：云同步、在线工坊下载、pkg 的**写回/重打包**、`interactive` 交互模式。
 9. **没有真实工坊样本做过端到端回归**：测试用的 pkg 是合成样本（含畸形/截断/路径穿越/超大条目等用例）。遇到具体包解析异常，欢迎带 `repkg info` 的输出提 issue。
-10. **界面与命令行输出目前只有中文**（CLI 参数名是英文）。英文版说明见 [README.md](README.md)；要做英文界面属于另一项工作，不在 v1.0.0 范围内。
+10. **首次启动按系统语言选择，可能猜错。** 探测用的是 Windows 的界面语言（类 Unix 回退到 `LANG`）；猜错时在 GUI 的**语言**菜单里改，或给 CLI 传 `--lang`——选择会被记住。
+11. **更新检查是手动的，只有需要时联网。** 不下载也不安装任何东西：关于窗口（或 `repkg --check-update`）向 GitHub releases API 发一次 HTTPS 请求并显示结果；离线时只会提示连不上 GitHub。
+12. **`settings.json` 位于 `%APPDATA%\RePKG-Enhanced\`**，只有一个字段（`language`）。删掉该文件即恢复「跟随系统」。
 
 ---
 
@@ -292,4 +306,5 @@ DXT1/3/5 解码是原版 RePKG 自带的托管实现，没有引入额外原生�
 | [阶段 4：TEX 栈与 CLI](docs/04-cli-and-textures.md) | SkiaSharp 迁移、自研 GIF 编码器、CLI 语义 |
 | [阶段 5：GUI 与清单](docs/05-gui.md) | Avalonia 12 界面、无头渲染测试、manifest |
 | [阶段 6：发布与 CI](docs/06-publish-and-ci.md) | AOT 单文件方案、内嵌原生库、Release 流水线 |
-| [决策记录](docs/DECISIONS.md) | 20 条 ADR：每个"为什么不那样做" |
+| [阶段 7：v2.0.0 —— 双语与更新检查](docs/07-i18n-and-updates.md) | 运行时切换语言、设置持久化、离线优先的更新检查 |
+| [决策记录](docs/DECISIONS.md) | 24 条 ADR：每个"为什么不那样做" |

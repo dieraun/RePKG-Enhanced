@@ -1,0 +1,25 @@
+<Project>
+
+  <!-- 构建卫生（2.0.0 新增）：剔除随包带来的原生调试符号（libSkiaSharp.pdb / libHarfBuzzSharp.pdb 等）。
+       背景：这样一份 pdb 就有 80 MB 上下，框架依赖构建会把 runtimes\**\native 下**所有 RID**的副本
+       复制进每个工程的 bin，7 个工程 × 3 个 Windows RID ≈ 2 GB 纯浪费。
+       原生符号只服务原生调试；托管栈由我们自己的 pdb 覆盖，因此默认剔除。 -->
+
+  <Target Name="RePKGExcludeNativeDebugSymbols"
+          BeforeTargets="CopyFilesToOutputDirectory;_CopyFilesMarkedCopyLocal;ComputeResolvedFilesToPublishList"
+          Condition="'$(ExcludeNativeDebugSymbols)' != 'false'">
+
+    <ItemGroup>
+      <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)"
+                               Condition="'%(Extension)' == '.pdb'
+                                          and $([System.String]::Copy('%(FullPath)').Contains('\runtimes\'))
+                                          and $([System.String]::Copy('%(FullPath)').Contains('\native\'))" />
+
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+                             Condition="'%(Extension)' == '.pdb'
+                                        and $([System.String]::Copy('%(FullPath)').Contains('\runtimes\'))
+                                        and $([System.String]::Copy('%(FullPath)').Contains('\native\'))" />
+    </ItemGroup>
+  </Target>
+
+</Project>

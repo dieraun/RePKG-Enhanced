@@ -12,7 +12,8 @@ namespace RePKG.Cli
         Info,
         Tex,
         Help,
-        Version
+        Version,
+        Update
     }
 
     /// <summary>解析后的命令行参数。</summary>
@@ -58,5 +59,8 @@ namespace RePKG.Cli
         public int? QueueCapacity { get; set; }
 
         public bool Verbose { get; set; }
+
+        /// <summary>只检查更新，不做任何导出（<c>--check-update</c>）。</summary>
+        public bool CheckUpdate { get; set; }
     }
 }
