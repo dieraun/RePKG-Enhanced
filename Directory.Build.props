@@ -18,4 +18,19 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- 版本号：与 git tag 对齐（v1.0.0 → 1.0.0）。
+       NativeBootstrap 用 AssemblyInformationalVersion 命名原生库解压目录，改版本会换目录。 -->
+  <PropertyGroup>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <Product>RePKG-Enhanced</Product>
+    <Authors>dieraun</Authors>
+    <Company>RePKG-Enhanced</Company>
+    <Copyright>MIT © 2026 dieraun · 基于 notscuffed/RePKG (MIT) 二次修改</Copyright>
+    <RepositoryUrl>https://github.com/dieraun/RePKG-Enhanced</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+  </PropertyGroup>
+
 </Project>

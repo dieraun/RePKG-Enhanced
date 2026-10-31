@@ -5,7 +5,7 @@ namespace RePKG.Cli
 {
     internal static class HelpText
     {
-        public const string Version = "0.4.0";
+        public const string Version = "1.0.0";
 
         public const string Usage = @"RePKG-Enhanced —— Wallpaper Engine pkg 提取工具（MIT）
 
