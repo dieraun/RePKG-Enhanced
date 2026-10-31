@@ -207,6 +207,34 @@ CI 日志中唯一的两类注解都是环境/风格提示，不影响结论：
 - `Node.js 20 is deprecated`（`actions/checkout@v4`、`actions/setup-dotnet@v4`、`actions/upload-artifact@v4` 被强制跑在 Node 24 上）—— 上游 action 的既有状况。
 - 5 条 `xUnit1051`（测试里没用 `TestContext.Current.CancellationToken`）—— 仅测试项目的风格告警。
 
+### 5.2 正式版 CI 运行结果（v1.0.0）
+
+阶段 7 把版本号统一抬到 `1.0.0`（`Directory.Build.props` 的 `Version`/`AssemblyVersion`/`FileVersion` + `Cli/HelpText.Version`），打 `v1.0.0` tag 后流水线再次跑通：
+
+| 项 | 值 |
+|---|---|
+| Run | [#41190337461](https://github.com/dieraun/RePKG-Enhanced/actions/runs/41190337461)，`success` |
+| 耗时 | 09:50:48Z → 09:53:59Z（约 3 分 11 秒） |
+| Tag 指向 | `c33a9a2`（`main` 上的 v1.0.0 提交） |
+| Release | [v1.0.0](https://github.com/dieraun/RePKG-Enhanced/releases/tag/v1.0.0) |
+
+Release 附件（CI 产出）：
+
+| 附件 | 大小 | SHA-256（CI 日志与 Release digest 一致） |
+|---|---|---|
+| `repkg-win-x64.exe` | 14 369 792 B | `8413150f64a986e4e05eb0d2605d4ae07f5a810128123b9a8120f7ae052ee7e7` |
+| `RePKG-Enhanced-win-x64.exe` | 37 120 512 B | `c7d9a0a29c5ca96a3e7775ed939774c7714fef97e113926e6c7fa730f7803567` |
+| `SHA256SUMS.txt` | 179 B | `8801d49c33fd3a49d3d414b8821b52b20b8c762f204ed30849246888c23bf429` |
+
+这次的校验走的是「下载降级」路径：镜像前缀 `shturl.cc/CWg7vrfEaC7` 在本机 **DNS 解析失败**（`The remote name could not be resolved: 'shturl.cc'`），于是按约定**放弃下载**，改为读 CI 日志里「计算校验和」那一步的输出——两条哈希与 Release API 返回的 asset digest 逐字符一致：
+
+```
+c7d9a0a2…3567  RePKG-Enhanced-win-x64.exe
+8413150f…e7e7  repkg-win-x64.exe
+```
+
+> v1.0.0 与 v0.4.0 的 exe 字节数略有差异（AOT 编译产物不保证跨机器逐字节可复现），属于正常现象；两个版本的 `--version` 输出分别是 `repkg 1.0.0` 与 `repkg 0.4.0`。
+
 ---
 
 ## 6. 验收点对照
@@ -247,4 +275,4 @@ RePKG.Tests.Gui      15 passed
 5. **未做代码签名 / 公证**：Windows SmartScreen 可能提示「未知发布者」。
 6. **CI 与 `global.json` 的版本耦合已实测通过**：runner 上 SDK 为 10.0.4xx，`global.json`（`10.0.100` + `rollForward: latestFeature`）能正常匹配；若将来 runner 只剩 10.0.1xx，`latestFeature` 仍允许，无需改动。
 7. **`gh release` 依赖 `GITHUB_TOKEN` 的 `contents: write`**：仓库当前默认 token 权限可用；若组织策略收紧，需要改用 PAT。
-8. **tag 与 main 有偏移**：`v0.4.0` 指向 `289f596`，之后 `main` 又有一个纯文档提交（`73b6124`）。下次打 tag 前建议先在 main 上对齐版本号。
+8. **tag 与 main 的偏移已收敛**：`v1.0.0` 指向 `c33a9a2`，即当时的 main HEAD；之后只有纯文档提交。后续打 tag 时建议仍先确认 main 上的版本号（`Directory.Build.props` 的 `Version` 与 `Cli/HelpText.Version` 两处）已对齐。
