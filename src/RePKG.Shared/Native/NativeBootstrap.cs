@@ -25,6 +25,9 @@ namespace RePKG.Shared.Native
         /// <summary>内嵌资源名的前缀；csproj 里用 <c>RePKG.Native.%(Filename)%(Extension)</c> 生成。</summary>
         public const string ResourcePrefix = "RePKG.Native.";
 
+        /// <summary>覆盖自解压目录的环境变量（默认 %LOCALAPPDATA%/RePKG-Enhanced/native）。</summary>
+        public const string CacheDirectoryVariable = "REPKG_NATIVE_CACHE";
+
         private static int _state;
         private static string? _cacheDirectory;
         private static string? _lastError;
@@ -43,6 +46,52 @@ namespace RePKG.Shared.Native
         /// <summary>第一条失败原因（加载失败不致命，仅用于诊断输出）。</summary>
         public static string? LastError => _lastError;
 
+        /// <summary>诊断用：把内嵌资源的搜索过程排成一行行文本（不联网、不写盘）。</summary>
+        public static IEnumerable<string> Describe()
+        {
+            yield return "cache=" + (_cacheDirectory ?? "(none)");
+
+            foreach (var assembly in CollectCandidateAssemblies())
+            {
+                string[] names;
+                string? failure = null;
+
+                try
+                {
+                    names = assembly.GetManifestResourceNames();
+                }
+                catch (Exception ex)
+                {
+                    names = Array.Empty<string>();
+                    failure = ex.GetType().Name;
+                }
+
+                if (failure != null)
+                {
+                    yield return "assembly " + (assembly.GetName().Name ?? "?") + ": " + failure;
+                    continue;
+                }
+
+                var hits = 0;
+
+                foreach (var name in names)
+                {
+                    if (name.StartsWith(ResourcePrefix, StringComparison.Ordinal))
+                        hits++;
+                }
+
+                yield return "assembly " + (assembly.GetName().Name ?? "?") + ": " + names.Length + " resource(s), " + hits + " native";
+            }
+
+            foreach (var path in Loaded)
+                yield return "loaded " + path;
+
+            foreach (var path in Extracted)
+                yield return "extracted " + path;
+
+            yield return "error " + (_lastError ?? "(none)");
+        }
+
         /// <summary>幂等；必须在任何 SkiaSharp/Avalonia 调用之前执行。</summary>
         public static void EnsureLoaded()
         {
@@ -51,7 +100,7 @@ namespace RePKG.Shared.Native
 
             try
             {
-                Run(Assembly.GetEntryAssembly(), typeof(NativeBootstrap).Assembly);
+                Run(CollectCandidateAssemblies());
             }
             catch (Exception ex)
             {
@@ -60,16 +109,34 @@ namespace RePKG.Shared.Native
             }
         }
 
-        /// <summary>测试入口：从指定程序集里找 <c>RePKG.Native.*</c> 资源并解压/预加载。</summary>
-        internal static void Run(Assembly? entryAssembly, Assembly? sharedAssembly)
+        /// <summary>
+        /// 收集可能承载内嵌资源的程序集。NativeAOT 里 <see cref="Assembly.GetEntryAssembly"/> 未必
+        /// 就是装了资源的那个程序集，所以把入口、当前、本程序集以及已加载程序集一并纳入。
+        /// </summary>
+        internal static IReadOnlyList<Assembly> CollectCandidateAssemblies()
         {
-            var assemblies = new List<Assembly>(2);
+            var assemblies = new List<Assembly>(4);
 
-            if (entryAssembly != null)
-                assemblies.Add(entryAssembly);
+            Add(Assembly.GetEntryAssembly());
+            Add(Assembly.GetExecutingAssembly());
+            Add(typeof(NativeBootstrap).Assembly);
 
-            if (sharedAssembly != null && sharedAssembly != entryAssembly)
-                assemblies.Add(sharedAssembly);
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+                Add(assembly);
+
+            return assemblies;
+
+            void Add(Assembly? assembly)
+            {
+                if (assembly != null && !assemblies.Contains(assembly))
+                    assemblies.Add(assembly);
+            }
+        }
+
+        /// <summary>测试入口：按指定程序集顺序找 <c>RePKG.Native.*</c> 资源并解压/预加载。</summary>
+        internal static void Run(IReadOnlyList<Assembly> assemblies)
+        {
+            var entryAssembly = assemblies.Count > 0 ? assemblies[0] : null;
 
             var resources = new Dictionary<string, Stream>(StringComparer.OrdinalIgnoreCase);
 
@@ -91,7 +158,7 @@ namespace RePKG.Shared.Native
                 return;
 
             var appDirectory = AppContext.BaseDirectory;
-            var version = GetVersionTag(entryAssembly ?? sharedAssembly);
+            var version = GetVersionTag(entryAssembly ?? typeof(NativeBootstrap).Assembly);
 
             foreach (var pair in resources)
             {
@@ -155,6 +222,12 @@ namespace RePKG.Shared.Native
 
         private static string GetCacheRoot()
         {
+            // 允许把自解压目录挪走：便携使用、%LOCALAPPDATA% 不可写、或安全软件拦截时都有用
+            var overridden = Environment.GetEnvironmentVariable(CacheDirectoryVariable);
+
+            if (!string.IsNullOrWhiteSpace(overridden))
+                return overridden;
+
             var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
             if (string.IsNullOrEmpty(local))

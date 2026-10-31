@@ -102,6 +102,7 @@ Assert.True(allocated < 32 * 1024 * 1024);   // 实测 1.0 MiB
 - **GUI 与 CLI 全量中英双语**。首次启动跟随系统语言，之后记住你的选择（存在 `%APPDATA%\RePKG-Enhanced\settings.json`）。
 - GUI 里切语言**立即生效**、无需重启：所有文案都是 `DynamicResource`，换语言时整本资源字典被替换。
 - CLI 的语言来源依次是 `--lang zh|en` → 环境变量 `REPKG_LANG` → `settings.json` → 系统。`repkg --lang en --help` 输出英文帮助。
+- 环境变量：`REPKG_LANG`（`zh`/`en`）、`REPKG_NATIVE_CACHE`（把自解压目录挪走，便携使用或 `%LOCALAPPDATA%` 不可写时有用）。设 `REPKG_NATIVE_DEBUG=1` 可让 CLI 打印原生库的来源。
 - **关于**窗口显示构建版本、完整版本号、作者、仓库、许可、运行环境，并提供「检查更新」按钮，对比 GitHub 最新 Release。
 - **默认全程离线**：启动时绝不联网。只有点那个按钮（或 `repkg --check-update`）才会向 GitHub API 发一次请求。
 

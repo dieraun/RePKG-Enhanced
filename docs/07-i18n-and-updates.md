@@ -89,3 +89,19 @@ set REPKG_LANG=en               # 环境变量（优先级低于 --lang，高于
 3. GitHub API 有速率限制（未认证 60 次/小时/IP），失败时只提示原因，不影响其他功能。
 4. 语言用 JSON 文件保存，不做多用户隔离（`%APPDATA%` 是按用户的）。
 5. 数值/时间格式始终用不变文化输出（`0.1s`、`1.2 MiB`），不随语言变小数点。
+
+## 8. 发布前实测发现的两个运行时问题（已修）
+
+1. **NativeAOT 下 `Assembly.GetEntryAssembly()` 未必是装了内嵌资源的那个程序集。**
+   原先 `NativeBootstrap` 只看入口程序集与本程序集；改为 `CollectCandidateAssemblies()`：入口、`GetExecutingAssembly()`、本程序集、
+   以及 `AppDomain.CurrentDomain.GetAssemblies()` 里所有已加载程序集，按顺序去重扫描 `RePKG.Native.*` 资源。
+
+2. **`%LOCALAPPDATA%` 不可写时自解压会静默失败**，随后 `DllImport("libSkiaSharp")` 会命中系统里别的旧版本（实测加载到 88.1），
+   报出难懂的 `TypeInitializationException`。现在：
+   - 新增 `REPKG_NATIVE_CACHE` 环境变量覆盖自解压根目录；
+   - 新增 `NativeBootstrap.Describe()`（自解压目录、各程序集资源数、已加载/已解压文件、第一条错误）；
+   - CLI 在「一个都没加载成功且存在错误」时向 stderr 打印 `[warn] native libraries were not loaded: ...` 并提示设 `REPKG_NATIVE_CACHE`；
+   - CLI 启动时把控制台编码切到 UTF-8（仅当连着终端），中文与 `→` 不再乱码。
+
+验证方式（本机）：`REPKG_NATIVE_CACHE=<可写目录> repkg.exe extract ... --lang en` 成功导出 3 个条目（含 TEX→PNG），
+`RePKG-Enhanced.exe` 首次启动解出 `av_libglesv2.dll` / `libHarfBuzzSharp.dll` / `libSkiaSharp.dll` 并正常起窗。

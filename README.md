@@ -102,6 +102,7 @@ Working set is printed but never asserted — on a 7.9 GB machine it is perturbe
 - The **GUI and the CLI are fully bilingual (Simplified Chinese / English)**. On first start the language follows the system setting; afterwards your choice is remembered in `%APPDATA%\RePKG-Enhanced\settings.json`.
 - Switching the language in the GUI takes effect **immediately** — no restart: every label is a `DynamicResource` looked up in a dictionary that is swapped on the fly.
 - The CLI picks the language from `--lang zh|en`, then `REPKG_LANG`, then `settings.json`, then the system. `repkg --lang en --help` prints the English help.
+- Environment variables: `REPKG_LANG` (`zh`/`en`) and `REPKG_NATIVE_CACHE` (moves the self-extraction directory, useful for portable installs or locked-down `%LOCALAPPDATA%`). Set `REPKG_NATIVE_DEBUG=1` to have the CLI print where its native libraries came from.
 - **About** shows the build version, informational version, author, repository, license and runtime, and has a **Check for updates** button that compares against the latest GitHub release.
 - **Everything stays offline by default**: nothing ever touches the network at startup. Only that button (or `repkg --check-update`) performs a single request to the GitHub API.
 
