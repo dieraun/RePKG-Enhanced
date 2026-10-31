@@ -168,6 +168,45 @@ ddd11df7...1f30f  repkg-win-x64.exe
 
 唯一无法在本地验证的是最后一步 `gh release create/upload`（要有真实 tag 才能触发）。
 
+### 5.1 真实 CI 运行结果（v0.4.0）
+
+打 tag `v0.4.0` 后流水线真实跑通：
+
+| 项 | 值 |
+|---|---|
+| Run | [#41187917612](https://github.com/dieraun/RePKG-Enhanced/actions/runs/41187917612)，`success` |
+| 耗时 | 09:15:03Z → 09:19:04Z（约 4 分 1 秒，含 restore/build/四套单测/AOT 发布/Release 上传） |
+| Job | 只有 `Windows x64（NativeAOT 单文件）`，`success` |
+| Release | [v0.4.0](https://github.com/dieraun/RePKG-Enhanced/releases/tag/v0.4.0) |
+
+Release 附件（由 CI 产出，非本地产物）：
+
+| 附件 | 大小 | SHA-256 |
+|---|---|---|
+| `repkg-win-x64.exe` | 14 369 280 B | `b03c57d248a1fa1d2d0fcf82ff61600bef3ef1b3cc6357704a7c103797564fb5` |
+| `RePKG-Enhanced-win-x64.exe` | 37 120 000 B | `2cbf153bfa41180bb71eda8720084a7376f908b5281ca4f598e7baf985b96b1c` |
+| `SHA256SUMS.txt` | 179 B | `ccfb527b61507fbb0703607b3d2bca19d893789bb6f754e025b7c3f605c7a621` |
+
+校验方式（按项目约定）：**只取 `SHA256SUMS.txt` 这个几百字节的小文件**比对，不为了校验去下 35 MB 的 GUI 包；下载走镜像前缀 `shturl.cc/CWg7vrfEaC7`，镜像超时就直接放弃下载校验、改看 CI 日志里的哈希。
+
+本次实测：`repkg-win-x64.exe` 本地 `Get-FileHash` 与 Release 附件 digest、`SHA256SUMS.txt` 三者完全一致；清空原生缓存后运行该 CI 产物：
+
+```
+> repkg-win-x64.exe --version
+repkg 0.4.0
+
+> repkg-win-x64.exe extract demo.pkg -o out --manifest --no-log
+[完成] demo.pkg → ...\out\demo  成功 3 / 跳过 0 / 失败 0 / 取消 0，8.0 MiB，0.3s
+
+> out\demo\materials\quad.png  98 B      ← CI 产物同样能加载内嵌 SkiaSharp
+> %LOCALAPPDATA%\RePKG-Enhanced\native\1.0.0\libSkiaSharp.dll  11 628 896 B
+```
+
+CI 日志中唯一的两类注解都是环境/风格提示，不影响结论：
+
+- `Node.js 20 is deprecated`（`actions/checkout@v4`、`actions/setup-dotnet@v4`、`actions/upload-artifact@v4` 被强制跑在 Node 24 上）—— 上游 action 的既有状况。
+- 5 条 `xUnit1051`（测试里没用 `TestContext.Current.CancellationToken`）—— 仅测试项目的风格告警。
+
 ---
 
 ## 6. 验收点对照
@@ -180,8 +219,8 @@ ddd11df7...1f30f  repkg-win-x64.exe
 | 2 | 原生库自解压机制可用 | ✅ 清空缓存后 CLI 转出 PNG、GUI 正常起窗，`%LOCALAPPDATA%` 下解出 3 个 DLL |
 | 3 | CLI 功能不受 AOT 影响 | ✅ `--version` / `extract`（含 TEX→PNG、manifest、JSONL 日志）全部正常 |
 | 4 | GUI 功能不受 AOT 影响 | ✅ 窗口标题/尺寸正确，无启动崩溃 |
-| 5 | CI 只跑 Windows，tag 触发 | ✅ `on.push.tags: v*`，单 job `windows-latest` |
-| 6 | 产物自动上传为 Release 附件 | ✅ `gh release create/upload` + `upload-artifact` |
+| 5 | CI 只跑 Windows，tag 触发 | ✅ `on.push.tags: v*`，单 job `windows-latest`；真实 run `success`（4 分 1 秒） |
+| 6 | 产物自动上传为 Release 附件 | ✅ [v0.4.0 Release](https://github.com/dieraun/RePKG-Enhanced/releases/tag/v0.4.0) 三个附件齐全，CI 产出的 exe 与 `SHA256SUMS.txt` 哈希一致且能实际跑 |
 | 7 | 代码保持跨平台 | ✅ AOT/内嵌配置全部 `Condition="'$(RuntimeIdentifier)' == 'win-x64'"`；`dotnet build RePKG-Enhanced.slnx` 不带 `-r` 时照旧 0 error |
 | 8 | 提交并 push 到远程 | ✅ 见 `docs\DECISIONS.md` ADR-020 与提交记录 |
 
@@ -206,5 +245,6 @@ RePKG.Tests.Gui      15 passed
 3. **exe 体积**：AOT + 内嵌原生库，CLI 13.7 MiB、GUI 35.4 MiB，比框架依赖发布大，但换来零依赖单文件。
 4. **`.pdb` 仍会生成在产物目录**：CI 只上传 `.exe` 与校验和，pdb 不对外分发。
 5. **未做代码签名 / 公证**：Windows SmartScreen 可能提示「未知发布者」。
-6. **CI 尚未真正跑过**：本次只能在本地复现全部步骤；首次 `v*` tag 触发时若 runner 镜像的 SDK 版本与 `global.json`（`10.0.100` + `rollForward: latestFeature`）不匹配，需要按 CI 日志调整。
-7. **`gh release` 依赖 `GITHUB_TOKEN` 的 `contents: write`**：若仓库组织策略收紧默认 token 权限，需要改用 PAT。
+6. **CI 与 `global.json` 的版本耦合已实测通过**：runner 上 SDK 为 10.0.4xx，`global.json`（`10.0.100` + `rollForward: latestFeature`）能正常匹配；若将来 runner 只剩 10.0.1xx，`latestFeature` 仍允许，无需改动。
+7. **`gh release` 依赖 `GITHUB_TOKEN` 的 `contents: write`**：仓库当前默认 token 权限可用；若组织策略收紧，需要改用 PAT。
+8. **tag 与 main 有偏移**：`v0.4.0` 指向 `289f596`，之后 `main` 又有一个纯文档提交（`73b6124`）。下次打 tag 前建议先在 main 上对齐版本号。
