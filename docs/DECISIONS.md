@@ -91,3 +91,21 @@
 - **理由**：原版把多个 pkg 的条目摊平到同一输出目录，批量时同名条目会互相覆盖；每包一个子目录让批量天然可并发且可回溯。退出码要能被脚本判断（用户 §四/§九 要求失败计数可见）。
 - **影响**：与原版 CLI 的输出布局不同（属**有意的兼容性差异**，已在 `--help` 里写明）；`-s/--singledir` 仍在**单包内**压平。
 - **状态**：已定（阶段 4，Q7 决策的落地）。
+
+## ADR-016 GUI 通过 `entrySelector` 复用 `ExportQueue`
+- **决策**：`ExportQueue.EnqueueAsync/EnqueueManyAsync` 增加可选参数 `Func<PackageEntry, bool>? entrySelector`；GUI 只把「勾选中的 `FullPath` 集合」作为谓词传进队列，不在 GUI 里写任何条目循环、不自行打开 pkg、不自行落盘。
+- **理由**：功能规范硬约束「CLI 与 GUI 必须共用同一流式内核与导出队列」。GUI 与 CLI 的唯一真实差异是「导出哪些条目」——把差异收敛成一个谓词，比复制一份循环（并随时间漂移）安全得多；同时避免了 GUI 侧出现第二份 `SafePath`/`AtomicFileWriter`/取消语义。
+- **影响**：`WorkItem` 多带一个委托；条目循环里多一次 `selector(entry)` 调用（O(1) 哈希查表）。GUI 的暂停/取消/进度/失败隔离全部继承队列行为，没有第二套实现。
+- **状态**：已定（阶段 5）。
+
+## ADR-017 资源清单（manifest）归 `RePKG.Shared/Catalog`
+- **决策**：新增 `PackageManifest`（`ToJson` / `Write`）作为清单 JSON 的唯一实现；`repkg info --json`、`repkg extract --manifest`、GUI「写 manifest 清单」三处共用；`ExportOptions.WriteManifest` 默认 `false`（CLI 显式开关，GUI 默认勾选）。
+- **理由**：清单是「包内容的属性」，不是「导出器的属性」——放进 Shared 才能同时服务只读命令（info）与写盘命令（extract）。若两边各写一份 `Utf8JsonWriter`，字段名与数值类型必然漂移（阶段 4 的 `info --json` 就已经是一份手写实现）。
+- **影响**：`ExportQueue` 在 job 结束时用 `AtomicFileWriter` 写 `<输出目录>/manifest.json`，失败只记 `manifest.failed` 警告（清单不是导出产物，不该把 job 判失败）；测试覆盖 Shared/CLI/GUI 三层。
+- **状态**：已定（阶段 5）。
+
+## ADR-018 Avalonia 12 拖拽迁移到 `IDataTransfer`
+- **决策**：窗口拖拽改用 `DragEventArgs.DataTransfer`（`IDataTransfer`）+ `DataTransferExtensions.TryGetFiles()`；测试侧用 `DataTransfer` + `DataTransferItem.CreateFile` 构造载荷，并走无头的 `RawDragEventType.DragOver/Drop` 真实事件链。
+- **理由**：Avalonia 12 移除了 `DragEventArgs.Data` 与 `DataFormats`（`CS0619: 'DataFormats' is obsolete: 'Use DataFormat instead'`），旧代码直接编译失败。用真实事件链而非直接调 VM，是因为「拖拽在 UI 层被正确接线」本身就是功能规范的一项，只能靠事件路径验证。
+- **影响**：`DataFormatKind`/`DataFormat<T>` 成为文件载荷入口；未来若要支持「拖入图片作为纹理」等，也走同一套 `IDataTransfer` 抽象。
+- **状态**：已定（阶段 5）。

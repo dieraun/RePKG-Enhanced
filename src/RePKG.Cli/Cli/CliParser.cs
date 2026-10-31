@@ -103,6 +103,10 @@ namespace RePKG.Cli
                         options.NoLog = true;
                         break;
 
+                    case "--manifest":
+                        options.Manifest = true;
+                        break;
+
                     case "--json":
                         options.Json = true;
                         break;

@@ -48,6 +48,9 @@ namespace RePKG.Cli
 
         public bool NoLog { get; set; }
 
+        /// <summary>在每个包的输出目录写一份 manifest.json 资源清单。</summary>
+        public bool Manifest { get; set; }
+
         public bool Json { get; set; }
 
         public int? Concurrency { get; set; }

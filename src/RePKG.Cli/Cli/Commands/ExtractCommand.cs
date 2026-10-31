@@ -34,7 +34,8 @@ namespace RePKG.Cli
                 Overwrite = options.Overwrite,
                 Concurrency = options.Concurrency ?? 1,
                 QueueCapacity = options.QueueCapacity ?? 64,
-                WriteLog = !options.NoLog
+                WriteLog = !options.NoLog,
+                WriteManifest = options.Manifest
             };
 
             var converter = options.NoTexConvert ? null : new TexEntryConverter();

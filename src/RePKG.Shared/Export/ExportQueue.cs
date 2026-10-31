@@ -90,10 +90,13 @@ namespace RePKG.Shared.Export
         /// <param name="packagePath">pkg 绝对/相对路径。</param>
         /// <param name="outputDirectoryOverride">可选：覆盖 <see cref="ExportOptions.OutputDirectory"/>。</param>
         /// <param name="jobLogPath">可选：本次导出单独写一份 JSONL 日志。</param>
+        /// <param name="entrySelector">可选：逐条目筛选（GUI 的勾选状态）；null 表示只按扩展名过滤。</param>
+        /// <param name="cancellationToken">入队等待的取消令牌（不影响已入队任务）。</param>
         public async Task<ExportJobResult> EnqueueAsync(
             string packagePath,
             string? outputDirectoryOverride = null,
             string? jobLogPath = null,
+            Func<PackageEntry, bool>? entrySelector = null,
             CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(packagePath))
@@ -102,7 +105,7 @@ namespace RePKG.Shared.Export
             EnsureStarted();
 
             var completion = new TaskCompletionSource<ExportJobResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var item = new WorkItem(Path.GetFullPath(packagePath), outputDirectoryOverride, jobLogPath, completion);
+            var item = new WorkItem(Path.GetFullPath(packagePath), outputDirectoryOverride, jobLogPath, entrySelector, completion);
 
             Interlocked.Increment(ref _packagesEnqueued);
 
@@ -141,12 +144,13 @@ namespace RePKG.Shared.Export
         public async Task<IReadOnlyList<ExportJobResult>> EnqueueManyAsync(
             IEnumerable<string> packagePaths,
             string? outputDirectoryOverride = null,
+            Func<PackageEntry, bool>? entrySelector = null,
             CancellationToken cancellationToken = default)
         {
             var tasks = new List<Task<ExportJobResult>>();
 
             foreach (var path in packagePaths)
-                tasks.Add(EnqueueAsync(path, outputDirectoryOverride, null, cancellationToken));
+                tasks.Add(EnqueueAsync(path, outputDirectoryOverride, null, entrySelector, cancellationToken));
 
             return await Task.WhenAll(tasks).ConfigureAwait(false);
         }
@@ -295,6 +299,11 @@ namespace RePKG.Shared.Export
                 foreach (var entry in source.Entries)
                 {
                     if (!_filter.Matches(entry))
+                        continue;
+
+                    // GUI 的逐条目勾选：选中集合随 job 一起进来，避免队列知道任何 UI 概念
+                    var selector = item.EntrySelector;
+                    if (selector != null && !selector(entry))
                         continue;
 
                     var relative = _options.SingleDirectory
@@ -456,6 +465,9 @@ namespace RePKG.Shared.Export
 
                 stopwatch.Stop();
 
+                if (_options.WriteManifest)
+                    WriteManifest(source, item, outputDirectory, jobLog);
+
                 var result = new ExportJobResult(
                     item.PackagePath,
                     outputDirectory,
@@ -498,8 +510,39 @@ namespace RePKG.Shared.Export
             }
         }
 
-        private JsonlExportLog? CreateJobLog(WorkItem item, string outputDirectory, out bool owned)
+        /// <summary>
+        /// 写资源清单。清单是「包内容的快照」，不是「导出结果」——
+        /// 因此写失败只记警告，不把整个 job 判失败。
+        /// </summary>
+        private void WriteManifest(PackageFileSource source, WorkItem item, string outputDirectory, JsonlExportLog? jobLog)
         {
+            var path = Path.Combine(outputDirectory, PackageManifest.FileName);
+
+            try
+            {
+                var writer = AtomicFileWriter.Create(path);
+
+                try
+                {
+                    PackageManifest.Write(source, writer.Stream);
+                    writer.Commit();
+                }
+                finally
+                {
+                    writer.Dispose();
+                }
+
+                _log.Info("manifest.written", item.PackagePath, path);
+                jobLog?.Info("manifest.written", item.PackagePath, path);
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                _log.Warn("manifest.failed", item.PackagePath, path, Describe(ex));
+                jobLog?.Warn("manifest.failed", item.PackagePath, path, Describe(ex));
+            }
+        }
+
+        private JsonlExportLog? CreateJobLog(WorkItem item, string outputDirectory, out bool owned)        {
             if (!string.IsNullOrWhiteSpace(item.JobLogPath))
             {
                 owned = true;
@@ -603,18 +646,24 @@ namespace RePKG.Shared.Export
         }
 
         private sealed class WorkItem
-        {            public WorkItem(string packagePath, string? outputDirectoryOverride, string? jobLogPath,
-                TaskCompletionSource<ExportJobResult> completion)
+        {
+            public WorkItem(string packagePath, string? outputDirectoryOverride, string? jobLogPath,
+                Func<PackageEntry, bool>? entrySelector, TaskCompletionSource<ExportJobResult> completion)
             {
                 PackagePath = packagePath;
                 OutputDirectoryOverride = outputDirectoryOverride;
                 JobLogPath = jobLogPath;
+                EntrySelector = entrySelector;
                 Completion = completion;
             }
 
             public string PackagePath { get; }
             public string? OutputDirectoryOverride { get; }
             public string? JobLogPath { get; }
+
+            /// <summary>GUI 的逐条目勾选：返回 false 的条目直接不参与本次导出（CLI 传 null）。</summary>
+            public Func<PackageEntry, bool>? EntrySelector { get; }
+
             public TaskCompletionSource<ExportJobResult> Completion { get; }
         }
     }

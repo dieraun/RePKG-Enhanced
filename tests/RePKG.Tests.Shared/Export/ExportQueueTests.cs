@@ -346,6 +346,50 @@ namespace RePKG.Tests.Shared.Export
         }
 
         [Fact]
+        public async Task WriteManifest_EmitsEntryTableJson()
+        {
+            var pkg = Pkg("manifest.pkg");
+            SyntheticPkgFactory.CreateFromFiles(pkg, new Dictionary<string, byte[]>
+            {
+                ["a/one.bin"] = new byte[] { 1, 2, 3 },
+                ["two.txt"] = Encoding.UTF8.GetBytes("hello")
+            });
+
+            await using var queue = new ExportQueue(Options(o => o.WriteManifest = true));
+            var result = await queue.EnqueueAsync(pkg, _out);
+
+            Assert.Null(result.FatalError);
+
+            var manifestPath = Path.Combine(_out, "manifest.json");
+            Assert.True(File.Exists(manifestPath));
+
+            using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(manifestPath));
+            var root = document.RootElement;
+
+            Assert.Equal(2, root.GetProperty("entryCount").GetInt32());
+            Assert.Equal(8, root.GetProperty("totalBytes").GetInt64());
+
+            var entries = root.GetProperty("entries").EnumerateArray().ToList();
+            Assert.Equal(new[] { "a/one.bin", "two.txt" }, entries.Select(e => e.GetProperty("fullPath").GetString()));
+            Assert.Equal(0, entries[0].GetProperty("offset").GetInt64());
+            Assert.Equal(3, entries[0].GetProperty("length").GetInt64());
+            Assert.Equal(3, entries[1].GetProperty("offset").GetInt64());
+            Assert.Equal(5, entries[1].GetProperty("length").GetInt64());
+        }
+
+        [Fact]
+        public async Task Manifest_IsNotWritten_ByDefault()
+        {
+            var pkg = Pkg("nomanifest.pkg");
+            SyntheticPkgFactory.Create(pkg, new[] { new SyntheticPkgFactory.EntrySpec("a.bin", 16) });
+
+            await using var queue = new ExportQueue(Options());
+            await queue.EnqueueAsync(pkg, _out);
+
+            Assert.False(File.Exists(Path.Combine(_out, "manifest.json")));
+        }
+
+        [Fact]
         public void Options_Validate_Rejects_Invalid_Values()
         {
             Assert.Throws<ArgumentOutOfRangeException>(() => Options(o => o.Concurrency = 0).Validate());

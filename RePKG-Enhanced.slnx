@@ -3,11 +3,13 @@
     <Project Path="src/RePKG.Application/RePKG.Application.csproj" />
     <Project Path="src/RePKG.Cli/RePKG.Cli.csproj" />
     <Project Path="src/RePKG.Core/RePKG.Core.csproj" />
+    <Project Path="src/RePKG.Gui/RePKG.Gui.csproj" />
     <Project Path="src/RePKG.Shared/RePKG.Shared.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/RePKG.Tests.BigFiles/RePKG.Tests.BigFiles.csproj" />
     <Project Path="tests/RePKG.Tests.Cli/RePKG.Tests.Cli.csproj" />
+    <Project Path="tests/RePKG.Tests.Gui/RePKG.Tests.Gui.csproj" />
     <Project Path="tests/RePKG.Tests.Shared/RePKG.Tests.Shared.csproj" />
     <Project Path="tests/RePKG.Tests/RePKG.Tests.csproj" />
     <Project Path="tests/RePKG.TestSupport/RePKG.TestSupport.csproj" />

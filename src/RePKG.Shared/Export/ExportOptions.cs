@@ -47,6 +47,9 @@ namespace RePKG.Shared.Export
         /// <summary>转换 .tex 时是否同时写出同名 .json 元信息（原版默认写，保持兼容）。</summary>
         public bool WriteTexInfo { get; set; } = true;
 
+        /// <summary>是否在每个包的输出目录写一份 <c>manifest.json</c> 资源清单。</summary>
+        public bool WriteManifest { get; set; }
+
         public void Validate()
         {
             if (string.IsNullOrWhiteSpace(OutputDirectory))

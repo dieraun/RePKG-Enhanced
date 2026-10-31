@@ -11,10 +11,21 @@
     <PackageVersion Include="SkiaSharp" Version="3.119.4" />
   </ItemGroup>
 
+  <ItemGroup Label="GUI（阶段 5）">
+    <!-- Avalonia 12 只支持 .NET 8+；本项目用 net10.0（阶段 0 核查） -->
+    <PackageVersion Include="Avalonia" Version="12.1.4" />
+    <PackageVersion Include="Avalonia.Desktop" Version="12.1.4" />
+    <PackageVersion Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+    <!-- 源生成器式 MVVM，AOT/裁剪友好 -->
+    <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+
   <ItemGroup Label="测试">
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <!-- 无头 Avalonia：真实 XAML 加载 + 真实 Skia 渲染，用于阶段 5 的 UI 验收 -->
+    <PackageVersion Include="Avalonia.Headless.XUnit" Version="12.1.4" />
   </ItemGroup>
 
 </Project>

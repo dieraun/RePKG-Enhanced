@@ -25,6 +25,7 @@ extract 选项：
       --no-tex-convert       不转换 TEX，原样导出 .tex
       --overwrite            覆盖已存在的目标文件
       --no-log               不写 JSONL 导出日志
+      --manifest             每个包写一份 manifest.json 资源清单
       --concurrency <n>      同时处理的 pkg 数量（默认 1）
       --queue-capacity <n>   排队上限（默认 64）
 

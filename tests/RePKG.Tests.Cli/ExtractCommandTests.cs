@@ -300,6 +300,45 @@ namespace RePKG.Tests.Cli
             Assert.Equal(0, Run("--help").ExitCode);
         }
 
+        [Fact]
+        public void Manifest_WritesResourceListNextToExports()
+        {
+            var pkg = Path.Combine(_root, "manifest.pkg");
+            SyntheticPkgFactory.CreateFromFiles(pkg, new Dictionary<string, byte[]>
+            {
+                ["a.bin"] = new byte[] { 1, 2, 3 },
+                ["sub/b.bin"] = new byte[] { 4, 5 }
+            });
+
+            var output = Path.Combine(_root, "out-manifest");
+            var result = Run("extract", pkg, "-o", output, "--manifest", "--no-log");
+
+            Assert.Equal(0, result.ExitCode);
+
+            var manifestPath = Path.Combine(output, "manifest", "manifest.json");
+            Assert.True(File.Exists(manifestPath));
+
+            using var document = JsonDocument.Parse(File.ReadAllText(manifestPath));
+            Assert.Equal(2, document.RootElement.GetProperty("entryCount").GetInt32());
+            Assert.Equal(5, document.RootElement.GetProperty("totalBytes").GetInt64());
+        }
+
+        [Fact]
+        public void Manifest_IsNotWrittenWithoutTheFlag()
+        {
+            var pkg = Path.Combine(_root, "nomanifest.pkg");
+            SyntheticPkgFactory.CreateFromFiles(pkg, new Dictionary<string, byte[]>
+            {
+                ["a.bin"] = new byte[] { 1 }
+            });
+
+            var output = Path.Combine(_root, "out-nomanifest");
+            var result = Run("extract", pkg, "-o", output, "--no-log");
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.False(File.Exists(Path.Combine(output, "nomanifest", "manifest.json")));
+        }
+
         private sealed class RunResult
         {
             public int ExitCode;
