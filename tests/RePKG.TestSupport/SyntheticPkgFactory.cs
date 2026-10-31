@@ -82,6 +82,28 @@ namespace RePKG.TestSupport
                 throw new InvalidOperationException("Synthetic pkg size mismatch");
         }
 
+        /// <summary>
+        /// 用「路径 → 真实字节」生成 pkg（小样本、内容需可断言时用；大文件仍走 <see cref="Create(string,IReadOnlyList{EntrySpec},ulong)"/>）。
+        /// </summary>
+        public static void CreateFromFiles(string path, IReadOnlyDictionary<string, byte[]> contents)
+        {
+            if (path == null) throw new ArgumentNullException(nameof(path));
+            if (contents == null) throw new ArgumentNullException(nameof(contents));
+            if (contents.Count == 0) throw new ArgumentException("Need at least one entry", nameof(contents));
+
+            var entries = new List<EntrySpec>(contents.Count);
+            foreach (var pair in contents)
+                entries.Add(new EntrySpec(pair.Key, pair.Value.LongLength));
+
+            var header = BuildHeader(DefaultMagic, entries);
+
+            using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, FileOptions.SequentialScan);
+            stream.Write(header, 0, header.Length);
+
+            foreach (var pair in contents)
+                stream.Write(pair.Value, 0, pair.Value.Length);
+        }
+
         /// <summary>只生成头部（用于构造截断/畸形包）。</summary>
         public static byte[] BuildHeader(string magic, IReadOnlyList<EntrySpec> entries)
         {

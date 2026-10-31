@@ -19,13 +19,13 @@
 - **决策**：`PackageEntry.Offset/Length` 由 `int` 改 `long`；读写按 `uint32` 解释。
 - **理由**：原版 `int` 把可用数据区限制在 2 GiB 以内；用户要求支持 ≥2 GB 总数据量且不引入新格式。
 - **影响**：破坏 Core 公开 API（本项目新仓库可接受）；`PackageWriter` 写回 `(uint)`。
-- **状态**：已定（阶段 0，Q2）；阶段 1 记为 D2，待确认。
+- **状态**：已定（阶段 0，Q2）；阶段 1 记为 D2，已确认。
 
 ## ADR-004 TFM：Core 保持 netstandard2.0，其余 net10.0
 - **决策**：`RePKG.Core` = netstandard2.0；`RePKG.Application`/`Shared`/`Cli`/`Gui`/测试 = net10.0。
 - **理由**：Application 需要 `Span<byte>`、`BinaryPrimitives`、`NativeLibrary`、AOT 注解；Shared 需要 `NativeLibrary.SetDllImportResolver` 与 `System.Threading.Channels`。Core 是纯模型，无需上移。
 - **影响**：Application 不再是 netstandard2.0 库（不再能被 .NET Framework 消费）——本项目无此需求。
-- **状态**：阶段 1 记为 D1，待确认。
+- **状态**：阶段 1 记为 D1，已确认。
 
 ## ADR-005 图像栈：SkiaSharp 取代 ImageSharp
 - **决策**：SkiaSharp 3.119.4（MIT），删除 `Texture/Helpers/RG88.cs` 的像素路径（改手工展开灰度/透明度）。
@@ -73,3 +73,21 @@
 - **理由**：按输出目录共享的日志（`append: true`，避免 GUI 连续导出互相截断）此前只在 `ExportQueue` 生命周期内有效，但 `DisposeAsync` 漏关，导致 `export-log.jsonl` 被本进程独占、外部工具读不到；这属于资源泄漏而非测试假象。
 - **影响**：日志在 `ExportQueue` 释放后即可被读取；GUI 若需导出后立即展示日志，只需先 `DisposeAsync` 队列（阶段 5 用法）。
 - **状态**：已定（阶段 3）。
+
+## ADR-013 TEX 转换以 `IEntryConverter` 注入 `ExportQueue`
+- **决策**：`ExportQueue(ExportOptions, IExportLog?, IEntryConverter?)`；TEX → png/gif/mp4/json 的转换由 `Shared/Export/TexEntryConverter.cs` 实现，作为第三个构造参数注入。CLI 与将来的 GUI 用同一组合。
+- **理由**：用户硬约束「CLI 与 GUI 共用同一导出队列，不得各写一套循环」。若把转换写在 `ExtractCommand` 里，GUI 必然复制一遍；若写死在队列里，`--no-tex-convert` 与将来的其他转换器又要加开关。
+- **影响**：跳过判定的责任被切开——非转换条目由队列用 `File.Exists` 判；转换条目的真实目标扩展名要解析 TEX 头才知道，由转换器返回 `ConversionResult.Skip`。队列里因此多一个 `convertible` 分支，但条目循环仍只有一处。
+- **状态**：已定（阶段 4）。
+
+## ADR-014 GIF 编码器自研，逐帧不物化
+- **决策**：`Texture/Gif/{GifWriter,ColorQuantizer,GifFrameEnumerator}.cs` 自研 GIF89a 编码（LZW + 中位切分量化 + 每帧局部位图色表），逐帧合成、写盘、释放。
+- **理由**：SkiaSharp 的 `SKImage.Encode(SKEncodedImageFormat.Gif)` 在 3.119.4 返回 null（上游 issue #1130），ImageSharp 的 `GifEncoder` 要求全部帧同时在内存（帧数 × W × H × 4）。用户 Q8 选择 G1（自研）。
+- **影响**：GIF 输出有损（≤255 色 + 1 透明索引）；只支持 raw mipmap 格式（与原版一致）。正确性由 `GifEncodingTests` 用 **SKCodec 独立解码**回读像素与帧延迟来保证，而不是自己验自己。LZW 码长增长规则经该测试确认（`nextCode > (1 << codeSize)` 即可，不需要 `>=` 变体）。
+- **状态**：已定（阶段 4）。
+
+## ADR-015 CLI 的目录约定与退出码
+- **决策**：`repkg extract` 把每个 pkg 导出到 `<输出根>/<pkg 名>`（`-n` 用 `project.json` 的 title，非法名经 `SafePath`/`FileNameSanitizer` 处理）；退出码 `0` 全成功 / `1` 有失败项 / `2` 参数错误 / `130` 取消；不实现 `interactive` 子模式。
+- **理由**：原版把多个 pkg 的条目摊平到同一输出目录，批量时同名条目会互相覆盖；每包一个子目录让批量天然可并发且可回溯。退出码要能被脚本判断（用户 §四/§九 要求失败计数可见）。
+- **影响**：与原版 CLI 的输出布局不同（属**有意的兼容性差异**，已在 `--help` 里写明）；`-s/--singledir` 仍在**单包内**压平。
+- **状态**：已定（阶段 4，Q7 决策的落地）。

@@ -7,16 +7,8 @@
   <ItemGroup Label="运行时依赖">
     <!-- 纯托管 LZ4，TEX mipmap 解压必需（原版 1.3.8） -->
     <PackageVersion Include="K4os.Compression.LZ4" Version="1.3.8" />
-  </ItemGroup>
-
-  <ItemGroup Label="过渡依赖（阶段 4 将移除）">
-    <!--
-      仅用于阶段 2/3 让上游 TEX 代码保持可编译。
-      阶段 4 会把 TexToImageConverter 重写为 SkiaSharp 并删除这两项。
-      不引用 System.Drawing.Common：上游无任何代码使用，且它仅支持 Windows。
-    -->
-    <PackageVersion Include="SixLabors.ImageSharp" Version="2.1.13" />
-    <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
+    <!-- 图像编码栈：MIT，Avalonia 12 的 Skia 后端已依赖同一版本；NativeAOT 实测可裁剪 -->
+    <PackageVersion Include="SkiaSharp" Version="3.119.4" />
   </ItemGroup>
 
   <ItemGroup Label="测试">

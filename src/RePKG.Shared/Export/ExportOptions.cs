@@ -44,6 +44,9 @@ namespace RePKG.Shared.Export
         /// <summary>取消后是否删除已完成条目（默认 false：保留已完成，只清理未完成的临时文件）。</summary>
         public bool RollbackOnCancel { get; set; }
 
+        /// <summary>转换 .tex 时是否同时写出同名 .json 元信息（原版默认写，保持兼容）。</summary>
+        public bool WriteTexInfo { get; set; } = true;
+
         public void Validate()
         {
             if (string.IsNullOrWhiteSpace(OutputDirectory))

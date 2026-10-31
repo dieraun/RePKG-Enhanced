@@ -31,6 +31,7 @@ namespace RePKG.Shared.Export
         private readonly ExportOptions _options;
         private readonly PackageEntryFilter _filter;
         private readonly IExportLog _log;
+        private readonly IEntryConverter? _converter;
         private readonly Channel<WorkItem> _channel;
         private readonly List<Task> _workers = new List<Task>();
         private readonly ConcurrentBag<ExportJobResult> _results = new ConcurrentBag<ExportJobResult>();
@@ -44,13 +45,14 @@ namespace RePKG.Shared.Export
         private long _bytesWrittenTotal;
         private bool _disposed;
 
-        public ExportQueue(ExportOptions options, IExportLog? log = null)
+        public ExportQueue(ExportOptions options, IExportLog? log = null, IEntryConverter? converter = null)
         {
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _options.Validate();
 
             _filter = new PackageEntryFilter(_options.OnlyExtensions, _options.IgnoreExtensions);
             _log = log ?? NullExportLog.Instance;
+            _converter = converter;
             Control = new ExportControl();
 
             _channel = Channel.CreateBounded<WorkItem>(new BoundedChannelOptions(_options.QueueCapacity)
@@ -348,7 +350,10 @@ namespace RePKG.Shared.Export
                         continue;
                     }
 
-                    if (!_options.Overwrite && File.Exists(target))
+                    var convertible = _converter != null && _converter.CanConvert(entry);
+
+                    // 需要转换的条目由转换器自己判断目标是否已存在（目标扩展名要到解析 tex 头之后才知道）
+                    if (!convertible && !_options.Overwrite && File.Exists(target))
                     {
                         skipped++;
                         done++;
@@ -357,37 +362,60 @@ namespace RePKG.Shared.Export
                     }
 
                     var entryBytes = 0L;
-                    // 同步回调（不用 Progress<T>）：后者会把回调甩到线程池，既乱序又多分配
-                    var progress = new ThrottledProgress(copied =>
-                        ReportProgress(item, entry.FullPath, copied, entry.Length, done, total, bytesWritten + copied));
 
                     try
                     {
-                        var writer = AtomicFileWriter.Create(target);
-
-                        try
+                        if (convertible)
                         {
-                            entryBytes = EntryExtractor.CopyEntry(
-                                source,
-                                entry,
-                                writer.Stream,
-                                _options.CopyBufferSize,
-                                progress,
-                                Control.Token);
+                            var conversion = _converter!.Convert(source, entry, target, _options, Control.Token);
 
-                            writer.Commit();
+                            if (conversion.Skipped)
+                            {
+                                skipped++;
+                            }
+                            else
+                            {
+                                entryBytes = conversion.BytesWritten;
+                                succeeded++;
+                                bytesWritten += entryBytes;
+                                writtenFiles.Add(conversion.PrimaryPath!);
+
+                                _log.Info("entry.ok", item.PackagePath, entry.FullPath, entryBytes);
+                                jobLog?.Info("entry.ok", item.PackagePath, entry.FullPath, entryBytes);
+                            }
                         }
-                        finally
+                        else
                         {
-                            writer.Dispose();
+                            // 同步回调（不用 Progress<T>）：后者会把回调甩到线程池，既乱序又多分配
+                            var progress = new ThrottledProgress(copied =>
+                                ReportProgress(item, entry.FullPath, copied, entry.Length, done, total, bytesWritten + copied));
+
+                            var writer = AtomicFileWriter.Create(target);
+
+                            try
+                            {
+                                entryBytes = EntryExtractor.CopyEntry(
+                                    source,
+                                    entry,
+                                    writer.Stream,
+                                    _options.CopyBufferSize,
+                                    progress,
+                                    Control.Token);
+
+                                writer.Commit();
+                            }
+                            finally
+                            {
+                                writer.Dispose();
+                            }
+
+                            succeeded++;
+                            bytesWritten += entryBytes;
+                            writtenFiles.Add(target);
+
+                            _log.Info("entry.ok", item.PackagePath, entry.FullPath, entryBytes);
+                            jobLog?.Info("entry.ok", item.PackagePath, entry.FullPath, entryBytes);
                         }
-
-                        succeeded++;
-                        bytesWritten += entryBytes;
-                        writtenFiles.Add(target);
-
-                        _log.Info("entry.ok", item.PackagePath, entry.FullPath, entryBytes);
-                        jobLog?.Info("entry.ok", item.PackagePath, entry.FullPath, entryBytes);
                     }
                     catch (OperationCanceledException)
                     {

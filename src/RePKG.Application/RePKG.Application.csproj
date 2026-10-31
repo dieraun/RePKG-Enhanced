@@ -22,8 +22,12 @@
 
     <ItemGroup>
         <PackageReference Include="K4os.Compression.LZ4" />
-        <!-- 过渡依赖：阶段 4 改为 SkiaSharp 后移除 -->
-        <PackageReference Include="Newtonsoft.Json" />
-        <PackageReference Include="SixLabors.ImageSharp" />
+        <PackageReference Include="SkiaSharp" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- 让测试工程直接验证内部实现（GIF 编码器 / 量化器 / 像素展开） -->
+        <InternalsVisibleTo Include="RePKG.Tests" />
+        <InternalsVisibleTo Include="RePKG.Tests.Cli" />
     </ItemGroup>
 </Project>

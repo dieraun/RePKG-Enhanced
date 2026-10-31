@@ -107,27 +107,74 @@ namespace RePKG.Application.Texture
         private byte[] ReadBytes(BinaryReader reader)
         {
             var byteCount = reader.ReadInt32();
-            
-            if (reader.BaseStream.Position + byteCount > reader.BaseStream.Length)
-                throw new UnsafeTexException("Detected invalid mipmap byte count - exceeds stream length");
+
+            if (byteCount < 0)
+                throw new UnsafeTexException($"Detected invalid mipmap byte count: {byteCount}");
 
             if (byteCount > Constants.MaximumMipmapByteCount)
                 throw new UnsafeTexException(
                     $"Mipmap byte count exceeds maximum size: {byteCount}/{Constants.MaximumMipmapByteCount}");
 
+            var stream = reader.BaseStream;
+
+            if (stream.CanSeek && stream.Position + byteCount > stream.Length)
+                throw new UnsafeTexException("Detected invalid mipmap byte count - exceeds stream length");
+
             if (!ReadMipmapBytes)
             {
-                reader.BaseStream.Seek(byteCount, SeekOrigin.Current);
+                SkipBytes(stream, byteCount);
                 return null;
             }
 
             var bytes = new byte[byteCount];
-            var bytesRead = reader.Read(bytes, 0, byteCount);
-
-            if (bytesRead != byteCount)
-                throw new Exception("Failed to read bytes from stream while reading mipmap");
+            ReadExactly(stream, bytes);
 
             return bytes;
+        }
+
+        /// <summary>
+        /// 上游用单次 Read 读取整块 mipmap：FileStream/NetworkStream 都可能短读，短读被当成错误。
+        /// 这里改为循环读满，只有真正读到流末尾才报错。
+        /// </summary>
+        private static void ReadExactly(Stream stream, byte[] buffer)
+        {
+            var offset = 0;
+
+            while (offset < buffer.Length)
+            {
+                var read = stream.Read(buffer, offset, buffer.Length - offset);
+
+                if (read <= 0)
+                    throw new EndOfStreamException(
+                        $"Failed to read mipmap bytes: stream ended after {offset} of {buffer.Length} bytes");
+                
+                offset += read;
+            }
+        }
+
+        private static void SkipBytes(Stream stream, int byteCount)
+        {
+            if (byteCount == 0) return;
+
+            if (stream.CanSeek)
+            {
+                stream.Seek(byteCount, SeekOrigin.Current);
+                return;
+            }
+
+            var buffer = new byte[Math.Min(byteCount, Constants.DefaultCopyBufferSize)];
+            var remaining = byteCount;
+
+            while (remaining > 0)
+            {
+                var read = stream.Read(buffer, 0, Math.Min(buffer.Length, remaining));
+
+                if (read <= 0)
+                    throw new EndOfStreamException(
+                        $"Failed to skip mipmap bytes: stream ended while skipping {byteCount} bytes");
+
+                remaining -= read;
+            }
         }
 
         private Func<BinaryReader, TexMipmap> PickMipmapReader(TexImageContainerVersion containerVersion)

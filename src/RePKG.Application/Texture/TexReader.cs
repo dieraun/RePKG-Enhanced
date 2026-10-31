@@ -35,6 +35,17 @@ namespace RePKG.Application.Texture
             }
         }
 
+        /// <summary>
+        /// 便捷重载：直接从任意流读取一个 TEX（不复制整份字节，也不关闭调用方的流）。
+        /// </summary>
+        public ITex ReadFrom(Stream stream, bool leaveOpen = true)
+        {
+            if (stream == null) throw new ArgumentNullException(nameof(stream));
+
+            using (var reader = new BinaryReader(stream, System.Text.Encoding.UTF8, leaveOpen))
+                return ReadFrom(reader);
+        }
+
         public ITex ReadFrom(BinaryReader reader)
         {
             if (reader == null) throw new ArgumentNullException(nameof(reader));
