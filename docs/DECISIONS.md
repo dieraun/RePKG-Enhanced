@@ -54,10 +54,22 @@
 - **决策**：`PackageReader.ReadFrom` 继续返回 `Core.Package.Package`，数据区起点由 `stream.Position` 直接给出；不引入额外的"表对象 + 读表接口"。
 - **理由**：该抽象只是把已有对象再包一层，对"数据区不经内存"这一目标没有任何贡献，却新增 2 个公共类型与一层间接。真正的流式要求由 `PackageFileSource`（持句柄 + 偏移）满足。
 - **影响**：阶段 1 清单中 `Package/PackageTable.cs`、`IPackageTableReader.cs` 两项不再创建。
-- **状态**：已定（阶段 2，待用户确认）。
+- **状态**：已定（阶段 2，已确认）。
 
 ## ADR-010 分块复制只保留一处实现
 - **决策**：分块 `Read/Write` 循环只存在于 `Application/Package/EntryExtractor.cs`；原计划放入 `Shared/IO/StreamPump.cs` 的实现**在阶段 2 不创建**。
 - **理由**：阶段 1 自查规则"不得有第二处复制循环"要求唯一实现；提前在 `Shared` 建 `StreamPump` 会造成 Application 与 Shared 两份近似代码。等阶段 3 出现第二个真实调用点（原子写入落盘）时再抽公共件，并让 `EntryExtractor` 委托过去。
 - **影响**：阶段 3 若抽出 `StreamPump`，`EntryExtractor.CopyStream` 改为转发，签名不变。
-- **状态**：已定（阶段 2，待用户确认）。
+- **状态**：已定（阶段 2，已确认）。
+
+## ADR-011 阶段 3 未抽 `StreamPump`、未建 `PackageCatalog`
+- **决策**：阶段 3 结束时，分块复制仍只存在于 `Application/Package/EntryExtractor.cs`；`Shared/IO/StreamPump.cs` 与 `Shared/Catalog/PackageCatalog.cs` 均不创建。
+- **理由**：`EntryExtractor.CopyEntry` 已经接收任意 `Stream` 目标（`AtomicFileWriter.Stream` 就是普通 `FileStream`），没有出现"第二处复制循环"，此时抽 `StreamPump` 只会多一层转发；`PackageCatalog`（批量清单/预览）在阶段 3 没有任何消费者，等 `RePKG.Cli` 的目录枚举与 GUI 的批量列表落地后，按真实需求一次性设计。
+- **影响**：阶段 1 清单中 `Shared/IO/StreamPump.cs`、`Shared/Catalog/PackageCatalog.cs` 标注为"未建"；若阶段 4/5 出现第二调用点或真实清单需求，再引入并更新本 ADR。
+- **状态**：已定（阶段 3）。
+
+## ADR-012 导出日志句柄由队列统一关闭
+- **决策**：`ExportQueue.DisposeAsync` 在 worker 全部结束后，逐个 `Dispose()` `_sharedLogs` 里的 `JsonlExportLog` 并清空字典，然后才 `Dispose()` 构造注入的 `IExportLog`。
+- **理由**：按输出目录共享的日志（`append: true`，避免 GUI 连续导出互相截断）此前只在 `ExportQueue` 生命周期内有效，但 `DisposeAsync` 漏关，导致 `export-log.jsonl` 被本进程独占、外部工具读不到；这属于资源泄漏而非测试假象。
+- **影响**：日志在 `ExportQueue` 释放后即可被读取；GUI 若需导出后立即展示日志，只需先 `DisposeAsync` 队列（阶段 5 用法）。
+- **状态**：已定（阶段 3）。

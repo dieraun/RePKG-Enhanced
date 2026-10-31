@@ -1,7 +1,7 @@
 namespace RePKG.Application
 {
     // 基于 notscuffed/RePKG (MIT) 二次修改：新增流式读取相关常量。
-    internal static class Constants
+    public static class Constants
     {
         public const int MaximumFrameCount = 100_000;
         public const int MaximumImageCount = 100;
