@@ -119,5 +119,11 @@
 ## ADR-020 发布流水线：单 job `windows-latest` + tag 触发 + `gh` 上传 Release
 - **决策**：`.github/workflows/release.yml` 只有 `windows-x64` 一个 job；触发条件 `push.tags: v*` 与 `workflow_dispatch`（可指定 tag 覆盖已存在的 Release）；用 `gh release create/upload --clobber` 上传 `repkg-win-x64.exe`、`RePKG-Enhanced-win-x64.exe`、`SHA256SUMS.txt`；流水线内置两条「假单文件」护栏——产物目录出现任何 `.dll` 或 exe < 5 MB 直接失败。
 - **理由**：用户本轮明确「只要 Windows x64、只跑 windows 流水线」，三平台矩阵此时只会制造看不到的红叉；用官方 `gh` CLI 而不是第三方 Release action，少一个供应链依赖；`vswhere` 提前验证 MSVC 工具链，避免 20 分钟 AOT 编译后在链接阶段才失败；产物校验把「原生库到底有没有进去」变成 CI 断言，而不是靠人肉看体积。
-- **影响**：`global.json` 的 SDK 版本放宽为 `10.0.100` + `rollForward: latestFeature`，避免 runner 上只有 10.0.1xx 时直接报错；CI 尚未在真实 runner 上跑过，首次 tag 可能需要按日志微调。Linux/macOS 发布作业留待后续阶段恢复。
-- **状态**：已定（阶段 6）。
+- **影响**：`global.json` 的 SDK 版本放宽为 `10.0.100` + `rollForward: latestFeature`，避免 runner 上只有 10.0.1xx 时直接报错。**已在真实 runner 上验证两次**：`v0.4.0`（Run #41187917612）与 `v1.0.0`（Run #41190337461）均 success，无需按日志微调。Linux/macOS 发布作业留待后续阶段恢复。
+- **状态**：已定（阶段 6，已在真实 CI 上验证）。
+
+## ADR-021 README 双语排布：英文为首页 + `README.zh-CN.md`
+- **决策**：`README.md` 用英文（GitHub 首页默认展示），中文版放 `README.zh-CN.md`，两个文件顶部各有一行语言切换（`**English** | [简体中文](README.zh-CN.md)` 与反向链接），章节结构与数据表一一对应。
+- **理由**：GitHub 的惯例是首页英文、本地语言另立文件（`README.<locale>.md`），这样仓库首屏对国际读者可读，同时中文读者一键切换；两版都放正文而非折叠块，避免单文件内中英文并列导致篇幅翻倍与锚点冲突（徽章里的 `#download` 只能指向一种语言）。
+- **影响**：任何 README 改动必须**同时改两个文件**（数据、命令、限制条目保持一致），否则会出现版本漂移；`docs/01-file-inventory.md` 已登记两份文件。
+- **状态**：已定（v1.0.0 之后）。

@@ -1,23 +1,25 @@
 # RePKG-Enhanced
 
-**Wallpaper Engine `.pkg` 提取工具：大文件不崩、批量不卡、内存可控。**
+**English** | [简体中文](README.zh-CN.md)
+
+**A Wallpaper Engine `.pkg` extractor: huge files don't crash, batches don't stall, memory stays bounded.**
 
 [![release](https://img.shields.io/github/v/release/dieraun/RePKG-Enhanced?label=release)](https://github.com/dieraun/RePKG-Enhanced/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/dieraun/RePKG-Enhanced/release.yml?label=CI)](https://github.com/dieraun/RePKG-Enhanced/actions/workflows/release.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![platform](https://img.shields.io/badge/platform-Windows%20x64-0078d4)](#下载)
+[![platform](https://img.shields.io/badge/platform-Windows%20x64-0078d4)](#download)
 [![.NET](https://img.shields.io/badge/.NET-10-512bd4)](https://dotnet.microsoft.com/)
 
-基于 [notscuffed/RePKG](https://github.com/notscuffed/RePKG)（MIT，已停更）做**最小必要改动**：修掉它「大文件提取失败」的根因，并补上一个跨平台的 Avalonia 桌面界面。
-解析内核与导出队列只有一份，**CLI 与 GUI 共用**。
+Built on [notscuffed/RePKG](https://github.com/notscuffed/RePKG) (MIT, no longer maintained) with **the minimum necessary changes**: fix the root cause of its "large file extraction fails" behaviour, and add a cross-platform Avalonia desktop UI.
+There is exactly one parser core and one export queue — **the CLI and the GUI share both**.
 
-![主窗口（浅色）](docs/images/main-window-light.png)
+![Main window (light)](docs/images/main-window-light.png)
 
 ---
 
-## 为什么需要它
+## Why this exists
 
-Wallpaper Engine 的创意工坊包动辄几百 MB 到几 GB，原版 RePKG 在解析 pkg 时会这么干：
+Wallpaper Engine workshop packages are routinely hundreds of megabytes to several gigabytes, and the original RePKG does this while parsing a pkg:
 
 ```csharp
 private static void PopulateEntriesWithData(int dataStart, List<PackageEntry> entries, BinaryReader reader)
@@ -25,169 +27,169 @@ private static void PopulateEntriesWithData(int dataStart, List<PackageEntry> en
     foreach (var entry in entries)
     {
         reader.BaseStream.Seek(entry.Offset + dataStart, SeekOrigin.Begin);
-        entry.Bytes = reader.ReadBytes(entry.Length);   // ← 整包所有条目一次性进内存
+        entry.Bytes = reader.ReadBytes(entry.Length);   // ← every entry of the whole package, eagerly
     }
 }
 ```
 
-于是**提取一个 5 MB 的贴图，也要先把整个 2 GB 的包读进内存**——32 位进程直接 OOM，64 位进程疯狂换页，大条目还会因为 `int` 偏移截断而读错位置。
+So **extracting a single 5 MB texture first pulls the entire 2 GB package into memory** — a 32-bit process dies with OOM, a 64-bit one thrashes the page file, and large entries are read from the wrong offset because the `int` arithmetic truncates.
 
-RePKG-Enhanced 把**条目表与数据区彻底分离**：读表只记 `FullPath / Offset / Length`，提取时 `Seek` 到条目偏移，再用 1 MiB 缓冲**流式复制**到目标。峰值内存由缓冲区大小决定，与条目体积、包总体积**无关**。
+RePKG-Enhanced **separates the entry table from the data region**: reading the table only records `FullPath / Offset / Length`, and extraction seeks to the entry offset and **streams** it to the destination through a 1 MiB buffer. Peak memory is a function of the buffer size and is **independent of entry size and of total package size**.
 
-### 实测数据
+### Measured
 
-本机（Windows 10、7.9 GB 内存、SSD），`REPKG_BIG_TESTS=1` 门禁：
+On the development machine (Windows 10, 7.9 GB RAM, SSD), with the `REPKG_BIG_TESTS=1` gate enabled:
 
-| 场景 | 包大小 | 提取耗时 | 托管分配增量 | 峰值工作集 | 输出校验 |
+| Scenario | Package size | Extraction time | Managed allocation delta | Peak working set | Output check |
 |---|---|---|---|---|---|
-| 单条目 1 GiB | 1 073 741 867 B | 14.1 s | **1.0 MiB** | 40.2 MiB | SHA-256 与源逐字节一致 |
-| 两个 1.1 GiB 条目 | 2 362 232 074 B | 20.9 s | **1.0 MiB** | 42.3 MiB | 同上 |
+| Single 1 GiB entry | 1,073,741,867 B | 14.1 s | **1.0 MiB** | 40.2 MiB | SHA-256 matches the source byte for byte |
+| Two 1.1 GiB entries | 2,362,232,074 B | 20.9 s | **1.0 MiB** | 42.3 MiB | same as above |
 
-那 1.0 MiB 就是 `ArrayPool` 租的第一个缓冲区；**再大的包也不会让它变大**。原版路径下，同样场景需要至少「条目体积」级别的内存，2.2 GiB 的包在 32 位进程里必然失败。
+That 1.0 MiB is the first buffer rented from `ArrayPool`; **a larger package does not make it grow**. On the original code path the same scenario needs memory on the order of the entry size, and a 2.2 GiB package cannot work in a 32-bit process at all.
 
 <details>
-<summary>门禁断言长什么样（点开）</summary>
+<summary>What the gate actually asserts (click to expand)</summary>
 
 ```csharp
-// 提取 1 GiB 条目，断言托管分配增量不随条目体积线性增长
+// Extract a 1 GiB entry and assert the managed allocation delta does not scale with entry size
 var before = GC.GetTotalAllocatedBytes(precise: true);
 EntryExtractor.CopyEntry(source, entry, destination, bufferSize: 1 << 20);
 var allocated = GC.GetTotalAllocatedBytes(precise: true) - before;
-Assert.True(allocated < 32 * 1024 * 1024);   // 实测 1.0 MiB
+Assert.True(allocated < 32 * 1024 * 1024);   // measured: 1.0 MiB
 ```
 
-工作集只做打印、不做断言——7.9 GB 的机器上工作集受 OS 缓存与 GC 策略干扰，拿来做门禁会变成 flaky 测试。
+Working set is printed but never asserted — on a 7.9 GB machine it is perturbed by the OS file cache and GC policy, and gating on it would produce a flaky test.
 </details>
 
 ---
 
-## 核心特性
+## Highlights
 
-### 1. 大文件优先，条目不进内存
-- 条目表与数据区分离，`ReadBytes(entry.Length)` 已从整条提取链路移除（`grep` 可验）。
-- 单条提取走 `FileStream.Seek` + 1 MiB 分块复制；`RandomAccess.Read` 实现条目流，多线程可并行读同一个句柄。
-- 源 pkg 以 `FileAccess.Read` + `FileShare.Read` 打开，**不锁死**其他读取方。
-- 偏移按 **uint32** 解释、内部用 `long`：修掉原版 `int` 在 >2 GiB 包上的截断。
+### 1. Large files first — entries never enter memory
+- Entry table and data region are separated; `ReadBytes(entry.Length)` is gone from the whole extraction path (verifiable with `grep`).
+- A single entry is extracted via `FileStream.Seek` plus a 1 MiB chunked copy; the entry stream is implemented on `RandomAccess.Read`, so several consumers can read the same handle in parallel.
+- Source packages are opened with `FileAccess.Read` + `FileShare.Read`, so other readers are **not locked out**.
+- Offsets are interpreted as **uint32** and held as `long` internally, fixing the original `int` truncation on packages larger than 2 GiB.
 
-### 2. 批量导出：一个队列，失败隔离
-- 目录递归 + 扩展名过滤（`-e/--onlyexts`、`-i/--ignoreexts`，与原版语义一致，`ignore` 优先）。
-- 单一有界导出队列（`System.Threading.Channels`），并发数与队列上限都可配；**任一时刻只保留当前文件的一个流式读句柄**。
-- 单条目失败记日志后继续，失败计数进入汇总与退出码；损坏的 pkg 不会拖垮整批。
-- 暂停 / 取消在**条目边界**生效；取消后清理临时文件，已完成的条目默认保留。
-- 输出**原子写入**（同目录临时文件 + `File.Move` 替换），中断不留半成品。
+### 2. Batch export: one queue, failures isolated
+- Directory recursion plus extension filtering (`-e/--onlyexts`, `-i/--ignoreexts`, same semantics as the original, `ignore` wins).
+- A single bounded export queue (`System.Threading.Channels`); concurrency and queue capacity are both configurable, and **only one streaming read handle per file is alive at any moment**.
+- A failing entry is logged and skipped; the failure count feeds the summary and the exit code, and one corrupt package does not sink the batch.
+- Pause/cancel take effect at **entry boundaries**; cancelling removes temporary files, and already finished entries are kept by default.
+- Output is written **atomically** (temp file in the same directory, then `File.Move`), so an interruption never leaves a half-written target.
 
-### 3. TEX / GIF / MP4：提取与预览
-| 输入 | 输出 | 说明 |
+### 3. TEX / GIF / MP4: extraction and preview
+| Input | Output | Notes |
 |---|---|---|
-| `TEX`（RGBA8888 / R8 / RG88 / DXT1·3·5 / LZ4） | `PNG` | SkiaSharp 解码；像素在 `TexToImageConverter` 里按 header 尺寸左上角裁剪 |
-| 动画 `TEX`（`TEXS0001-0003` 帧表） | `GIF` | **自研 GIF89a 编码器**（LZW + 中位切分量化 + 逐帧局部色表），逐帧合成、写盘、释放，不物化全部帧 |
-| 视频纹理（`FIF_MP4`） | `MP4` | 校验 `ftypisom/ftypmsnv/ftypmp42` 后透传 |
-| 任意图片容器格式（`FIF_PNG` 等） | 原样 | 直接透传字节 |
-| 每个 TEX | `.json` | Wallpaper Engine 的纹理元信息（`format`、flags、GIF 序列信息） |
+| `TEX` (RGBA8888 / R8 / RG88 / DXT1·3·5 / LZ4) | `PNG` | Decoded with SkiaSharp; pixels are cropped to the header size from the top-left in `TexToImageConverter` |
+| Animated `TEX` (`TEXS0001-0003` frame tables) | `GIF` | **Self-written GIF89a encoder** (LZW + median-cut quantisation + per-frame local colour tables); frames are composed, written and freed one at a time — never all materialised |
+| Video texture (`FIF_MP4`) | `MP4` | Validated against `ftypisom/ftypmsnv/ftypmp42`, then passed through |
+| Any image container format (`FIF_PNG` etc.) | as-is | Bytes are passed straight through |
+| Every TEX | `.json` | Wallpaper Engine texture metadata (`format`, flags, GIF sequence info) |
 
-`--no-tex-convert` 可关掉转换、导出原始 `.tex`——**超大条目请用它**：TEX 转换必须把该条目读进内存（单条上限 250 MB），纯流式导出没有这个限制。
+`--no-tex-convert` disables conversion and exports the raw `.tex` — **use it for very large entries**: TEX conversion has to buffer that entry in memory (250 MB per-entry cap), while the pure streaming path has no such limit.
 
-### 4. GUI（Avalonia 12）
-- 单/批量加载 pkg，拖拽导入；包列表 + 条目列表 + 预览三栏。
-- **三态勾选**（全选 / 半选 / 全不选）双向传播，可按 图片 / 文本 / 视频 / 其它 筛选。
-- 预览：TEX 直接渲染成图、文本文件带 64 KiB 截断提示、视频给出提示。
-- 导出走**和 CLI 完全相同的队列与流式内核**，因此暂停、取消、失败隔离、进度全都有，没有第二套实现。
-- 明暗主题跟随系统；XAML 全部编译进程序（AOT 要求），无动画、无云同步。
+### 4. GUI (Avalonia 12)
+- Load one or many packages, or drag and drop them; three panes: packages, entries, preview.
+- **Tri-state checkboxes** (all / partial / none) propagate both ways, and entries can be filtered by image / text / video / other.
+- Preview: TEX is rendered as an image, text files are shown with a 64 KiB truncation notice, videos get an explanatory note.
+- Export runs on **the exact same queue and streaming core as the CLI**, so pause, cancel, failure isolation and progress all come for free — there is no second implementation.
+- Light/dark theme follows the system; all XAML is compiled into the binary (an AOT requirement); no animations, no cloud sync.
 
-![主窗口（深色）](docs/images/main-window-dark.png)
+![Main window (dark)](docs/images/main-window-dark.png)
 
-### 5. 单文件、零依赖
-`repkg.exe`（13.7 MiB）与 `RePKG-Enhanced.exe`（35.4 MiB）都是 **NativeAOT 单文件**：.NET 运行时、SkiaSharp / HarfBuzz / ANGLE 的原生库全部内嵌，解压即用，目标机器不需要装 .NET。
+### 5. Single file, zero dependencies
+`repkg.exe` (13.7 MiB) and `RePKG-Enhanced.exe` (35.4 MiB) are **NativeAOT single files**: the .NET runtime plus the SkiaSharp / HarfBuzz / ANGLE native libraries are all embedded, so they just run — no .NET installation on the target machine.
 
 ---
 
-## 下载
+## Download
 
-到 [Releases](https://github.com/dieraun/RePKG-Enhanced/releases/latest) 取最新 Windows x64 产物：
+Grab the latest Windows x64 build from [Releases](https://github.com/dieraun/RePKG-Enhanced/releases/latest):
 
-| 文件 | 说明 |
+| File | Description |
 |---|---|
-| `RePKG-Enhanced-win-x64.exe` | 图形界面版（约 35 MiB） |
-| `repkg-win-x64.exe` | 命令行版（约 14 MiB） |
-| `SHA256SUMS.txt` | 两个 exe 的 SHA-256 |
+| `RePKG-Enhanced-win-x64.exe` | Graphical version (~35 MiB) |
+| `repkg-win-x64.exe` | Command-line version (~14 MiB) |
+| `SHA256SUMS.txt` | SHA-256 of both executables |
 
-> **Windows 会拦一下，这是正常的。** 见下面的[注意事项](#注意事项与已知限制)。
+> **Windows will warn you once — that is expected.** See [Notes and known limitations](#notes-and-known-limitations).
 
 ---
 
-## 命令行用法
+## Command-line usage
 
 ```powershell
-# 提取单个 pkg（TEX 自动转 PNG/GIF/MP4，并写 .json 元信息）
+# Extract one package (TEX is converted to PNG/GIF/MP4, plus .json metadata)
 repkg extract wallpaper.pkg -o out
 
-# 递归提取一个目录下所有 pkg，只要 tex 和 png
+# Recursively extract every package under a directory, tex and png only
 repkg extract D:\workshop -r -o out -e tex,png
 
-# 超大包：只导原始条目，不做 TEX 转换（纯流式，内存恒定）
+# Very large package: raw entries only, no TEX conversion (pure streaming, flat memory)
 repkg extract huge.pkg --no-tex-convert -o out
 
-# 每个 pkg 一个子目录，目录名取 project.json 的 title，附带复制 project.json，并写资源清单
+# One subdirectory per package named after project.json's title, copy project.json, write a manifest
 repkg extract D:\workshop -r -n -c --manifest
 
-# 用 project.json 的 title 给输出目录命名，并覆盖已有文件
+# Name the output directory after project.json's title and overwrite existing files
 repkg extract wallpaper.pkg -n --overwrite
 
-# 查看清单（文本 / JSON）
+# Inspect the entry table (text / JSON)
 repkg info wallpaper.pkg
 repkg info wallpaper.pkg --json
 
-# 单独转换一个 .tex
+# Convert a standalone .tex
 repkg tex quad.tex -o out
 ```
 
-常用参数：
+Common options:
 
-| 参数 | 作用 |
+| Option | Effect |
 |---|---|
-| `-o, --output <目录>` | 输出根目录（默认 `output`） |
-| `-e, --onlyexts <列表>` / `-i, --ignoreexts <列表>` | 扩展名白/黑名单，逗号分隔，`ignore` 优先 |
-| `-r, --recursive` | 目录输入时递归找 `*.pkg` |
-| `-s, --singledir` | 不保留 pkg 内目录结构（单包内压平） |
-| `-n, --usename` | 用 `project.json` 的 `title` 作输出子目录名 |
-| `-c, --copyproject` | 同时写出 `project.json` |
-| `--no-tex-convert` | 不转换 TEX，原样导出 `.tex` |
-| `--overwrite` / `--no-log` / `--manifest` | 覆盖已有文件 / 不写日志 / 写资源清单 |
-| `--concurrency <n>` / `--queue-capacity <n>` | 同时处理的包数（默认 1）/ 排队上限（默认 64） |
+| `-o, --output <dir>` | Output root (default `output`) |
+| `-e, --onlyexts <list>` / `-i, --ignoreexts <list>` | Extension allow/deny list, comma separated, `ignore` wins |
+| `-r, --recursive` | When the input is a directory, recurse for `*.pkg` |
+| `-s, --singledir` | Flatten the package's internal directory structure |
+| `-n, --usename` | Use `project.json`'s `title` as the output subdirectory name |
+| `-c, --copyproject` | Also write `project.json` |
+| `--no-tex-convert` | Export `.tex` untouched instead of converting |
+| `--overwrite` / `--no-log` / `--manifest` | Overwrite existing files / skip the log / write a resource manifest |
+| `--concurrency <n>` / `--queue-capacity <n>` | Packages processed at once (default 1) / queue limit (default 64) |
 
-**退出码**：`0` 全部成功 · `1` 有失败项 · `2` 参数错误 · `130` 被用户中断。
+**Exit codes**: `0` all succeeded · `1` some items failed · `2` usage error · `130` interrupted by the user.
 
-> 与原版 CLI 的**有意差异**：批量时每个 pkg 导出到自己的子目录（原版摊平到同一目录，同名条目会互相覆盖）；不提供 `interactive` 子模式。`--help` 里写明了这两点。
+> **Deliberate differences from the original CLI**: in batch mode each package is exported into its own subdirectory (the original flattened everything into one directory, so same-named entries overwrote each other); the `interactive` sub-command is not provided. Both are stated in `--help`.
 
-### 导出产物
+### Output layout
 
 ```
 out\
   wallpaper\
-    project.json               # -c 时复制
+    project.json               # copied when -c is given
     scene.json
-    materials\quad.png          # TEX 转出来的图
-    materials\quad.json         # 纹理元信息
-    scene\movie.mp4             # 视频纹理
-    manifest.json               # --manifest 时的资源清单（条目表 + 偏移）
-    export-log.jsonl            # 逐条目事件日志（默认写）
+    materials\quad.png          # image produced from the TEX
+    materials\quad.json         # texture metadata
+    scene\movie.mp4             # video texture
+    manifest.json               # resource manifest (entry table + offsets) when --manifest is given
+    export-log.jsonl            # per-entry event log (written by default)
 ```
 
 ---
 
-## 图形界面
+## GUI
 
-1. 双击 `RePKG-Enhanced.exe`（首次启动会解压原生库，见注意事项）。
-2. 「添加 pkg」/「添加目录」，或直接把 `.pkg` 拖进窗口。
-3. 中间栏按需勾选条目，右上角筛选可只看图片/文本/视频；右侧实时预览。
-4. 选输出目录 → 勾选选项（递归子目录 / 覆盖已有文件 / TEX 转 PNG·GIF / 写 .json 元信息 / 写 manifest 清单 / 并发数）→「开始导出」。
-5. 导出中可「暂停 / 继续 / 取消」；进度条与状态栏显示当前包、当前条目、累计字节与失败数。
+1. Double-click `RePKG-Enhanced.exe` (the first start extracts the native libraries — see the notes).
+2. Use "添加 pkg" / "添加目录", or simply drop `.pkg` files onto the window.
+3. Tick entries in the middle pane as needed; the filter at the top right narrows it to images/text/videos, and the right pane previews the selection live.
+4. Choose an output directory → tick the options (recursive subdirectories / overwrite / TEX to PNG·GIF / write .json metadata / write manifest / concurrency) → "开始导出".
+5. While exporting you can pause, resume or cancel; the progress bar and status line show the current package, current entry, cumulative bytes and failure count.
 
 ---
 
-## 构建
+## Building
 
-需要 **.NET 10 SDK**（Windows 上做 AOT 发布还需要 MSVC C++ 工具链 + Windows SDK）。
+You need the **.NET 10 SDK** (AOT publishing on Windows additionally needs the MSVC C++ toolchain and the Windows SDK).
 
 ```powershell
 dotnet build RePKG-Enhanced.slnx -c Release
@@ -197,96 +199,97 @@ dotnet test tests\RePKG.Tests.Shared\RePKG.Tests.Shared.csproj -c Release
 dotnet test tests\RePKG.Tests.Cli\RePKG.Tests.Cli.csproj -c Release
 dotnet test tests\RePKG.Tests.Gui\RePKG.Tests.Gui.csproj -c Release
 
-# 大文件门禁：会产生 GB 级中间文件，建议 ≥10 GB 空闲磁盘
+# Large-file gate: creates GB-sized temporary files, so keep >=10 GB free
 $env:REPKG_BIG_TESTS = '1'
 $env:REPKG_BIG_TMP   = 'D:\tmp\repkg-bigfiles'
 dotnet test tests\RePKG.Tests.BigFiles -c Release
 ```
 
-当前测试规模：`RePKG.Tests` 40 + `RePKG.Tests.Shared` 63 + `RePKG.Tests.Cli` 13 + `RePKG.Tests.Gui` 15 = **131 个单元/集成测试**，外加 2 个大文件门禁。
+Current test size: `RePKG.Tests` 40 + `RePKG.Tests.Shared` 63 + `RePKG.Tests.Cli` 13 + `RePKG.Tests.Gui` 15 = **131 unit/integration tests**, plus 2 large-file gates.
 
-### 发布（Windows x64，NativeAOT 单文件）
+### Publishing (Windows x64, NativeAOT single file)
 
 ```powershell
 dotnet publish src\RePKG.Cli\RePKG.Cli.csproj -c Release -r win-x64 -o artifacts\cli
 dotnet publish src\RePKG.Gui\RePKG.Gui.csproj -c Release -r win-x64 -o artifacts\gui
 ```
 
-打 `v*` tag 会触发 [release.yml](.github/workflows/release.yml)：`windows-latest` 上 还原 → 编译 → 四套单测 → AOT 发布 → 校验「产物目录里不许有 DLL」→ 上传两个 exe 与 `SHA256SUMS.txt` 到 Release。
+Pushing a `v*` tag triggers [release.yml](.github/workflows/release.yml): on `windows-latest` it restores → builds → runs the four test suites → publishes with AOT → verifies that **no DLL is left in the output directory** → uploads both executables and `SHA256SUMS.txt` to the release.
 
-### 为什么不是 `PublishSingleFile`
+### Why not `PublishSingleFile`
 
-`PublishAot` 与 `PublishSingleFile` 在 .NET 10 **无法共存**（[dotnet/runtime#117986](https://github.com/dotnet/runtime/discussions/117986)：原生 DLL 依旧躺在 exe 旁边），而 .NET 10 又取消了单文件应用在 exe 目录搜索原生库的行为。
+`PublishAot` and `PublishSingleFile` **cannot be combined** on .NET 10 ([dotnet/runtime#117986](https://github.com/dotnet/runtime/discussions/117986): the native DLLs still end up next to the exe), and .NET 10 also removed the behaviour where a single-file app searches its own directory for native libraries.
 
-所以本项目换了个路子：把 `libSkiaSharp.dll` / `libHarfBuzzSharp.dll` / `av_libglesv2.dll` 作为 `EmbeddedResource` **编进 exe**，启动时由 `NativeBootstrap` 解压到 `%LOCALAPPDATA%` 并 `NativeLibrary.Load` **预加载**；之后 SkiaSharp 的 `DllImport("libSkiaSharp")` 裸名加载会命中已加载模块，什么都不用改。
+So this project takes a different route: `libSkiaSharp.dll` / `libHarfBuzzSharp.dll` / `av_libglesv2.dll` are compiled into the exe as `EmbeddedResource`s; at startup `NativeBootstrap` extracts them to `%LOCALAPPDATA%` and **pre-loads** them with `NativeLibrary.Load`. Afterwards SkiaSharp's bare-name `DllImport("libSkiaSharp")` resolves to the already-loaded module — nothing else needs to change.
 
-> 踩坑记录：MSBuild 里这个目标必须挂 `BeforeTargets="SplitResourcesByCulture"`。挂在 `PrepareResourceNames` 之前**已经太晚**——`SplitResourcesByCulture` 是它的依赖，会先把 `@(EmbeddedResource)` 快照走，资源被静默丢弃（现象：`repkg.dll` 只有 31 KB）。细节见 [docs/06-publish-and-ci.md](docs/06-publish-and-ci.md)。
+> War story: in MSBuild this target must hang off `BeforeTargets="SplitResourcesByCulture"`. Hooking before `PrepareResourceNames` is **already too late** — `SplitResourcesByCulture` is a dependency of it and snapshots `@(EmbeddedResource)` first, so the resource is silently dropped (symptom: a 31 KB `repkg.dll`). Details in [docs/06-publish-and-ci.md](docs/06-publish-and-ci.md).
 
 ---
 
-## 项目结构
+## Project layout
 
 ```
-src/RePKG.Core         解析内核（netstandard2.0，上游代码最小改动）
-src/RePKG.Application  流式读取、TEX 解码、GIF 编码（net10.0）
-src/RePKG.Shared       导出队列、原子写入、路径校验、JSONL 日志、资源清单、原生库引导
-src/RePKG.Cli          命令行入口（repkg）
-src/RePKG.Gui          Avalonia 桌面入口
-build/                 MSBuild 片段（原生库内嵌）
-docs/                  各阶段报告与决策记录（ADR）
-tests/                 单元测试 + 大文件门禁 + CLI/GUI 集成测试
+src/RePKG.Core         Parser core (netstandard2.0, minimal changes to upstream code)
+src/RePKG.Application  Streaming reads, TEX decoding, GIF encoding (net10.0)
+src/RePKG.Shared       Export queue, atomic writes, path validation, JSONL log, manifest, native bootstrap
+src/RePKG.Cli          Command-line entry point (repkg)
+src/RePKG.Gui          Avalonia desktop entry point
+build/                 MSBuild fragment (native library embedding)
+docs/                  Per-stage reports and decision records (ADRs)
+tests/                 Unit tests + large-file gate + CLI/GUI integration tests
 ```
 
-依赖方向：`Core ← Application ← Shared ← {Cli, Gui}`。入口层只做「装配 + 呈现」，**不允许**出现第二套条目循环、路径校验或落盘逻辑。
+Dependency direction: `Core ← Application ← Shared ← {Cli, Gui}`. The entry layers only do "wiring plus presentation"; a second entry loop, path validator or file-writing path is **not allowed** there.
 
-## 依赖
+## Dependencies
 
-| 依赖 | 版本 | 许可 | 用途 |
+| Dependency | Version | License | Purpose |
 |---|---|---|---|
-| [K4os.Compression.LZ4](https://github.com/MiloszKrajewski/K4os.Compression.LZ4) | 1.3.8 | MIT | TEX 的 LZ4 解压 |
-| [SkiaSharp](https://github.com/mono/SkiaSharp) | 3.119.4 | MIT | 像素解码与 PNG 编码（与 Avalonia 后端同源） |
-| [Avalonia](https://github.com/AvaloniaUI/Avalonia) | 12.1.4 | MIT | 跨平台 GUI |
-| [CommunityToolkit.Mvvm](https://github.com/CommunityToolkit/dotnet) | 8.4.2 | MIT | 源生成 MVVM（AOT 友好） |
+| [K4os.Compression.LZ4](https://github.com/MiloszKrajewski/K4os.Compression.LZ4) | 1.3.8 | MIT | LZ4 decompression for TEX |
+| [SkiaSharp](https://github.com/mono/SkiaSharp) | 3.119.4 | MIT | Pixel decoding and PNG encoding (same version Avalonia's backend uses) |
+| [Avalonia](https://github.com/AvaloniaUI/Avalonia) | 12.1.4 | MIT | Cross-platform GUI |
+| [CommunityToolkit.Mvvm](https://github.com/CommunityToolkit/dotnet) | 8.4.2 | MIT | Source-generated MVVM (AOT-friendly) |
 
-DXT1/3/5 解码是原版 RePKG 自带的托管实现，没有引入额外原生依赖。所有依赖都是 OSI 认可的宽松许可。
-
----
-
-## 注意事项与已知限制
-
-1. **未做代码签名，Windows 可能提示 SmartScreen 拦截。**
-   首次运行 exe 时可能看到「Windows 已保护你的电脑」。点 **「更多信息」→「仍要运行」** 即可；也可以右键 exe →「属性」→ 勾选「解除锁定」。这是未签名分发的正常现象，不是文件损坏。发布页提供 `SHA256SUMS.txt`，可用 `Get-FileHash <exe> -Algorithm SHA256` 自行核对。
-2. **首次启动会自解压原生库。**
-   SkiaSharp / HarfBuzz / ANGLE 以资源形式内嵌在 exe 里，首次运行会解压到 `%LOCALAPPDATA%\RePKG-Enhanced\native\<版本>\`（CLI 约 11.6 MB，GUI 约 19 MB）。之后启动直接复用，没有额外开销。**升级版本会解压到新的版本目录，旧目录不会自动清理**，可手动删除。
-3. **只提供 Windows x64 预编译产物。** 代码本身保持跨平台（`Core/Application/Shared` 与 GUI 都能在 Linux/macOS 上构建运行），但当前发布流水线只覆盖 Windows x64。
-4. **TEX 转换需要整条读入内存。** 单条 mipmap 上限 250 MB（原版约束，防畸形包）。超大条目请用 `--no-tex-convert` 走纯流式导出——那条路径内存恒定。
-5. **动画 GIF 是有损的**：≤255 色 + 1 个透明索引（自研量化器的取舍）；只支持 raw mipmap 格式的 TEX，与上游行为一致。
-6. **包内路径上限从 255 字节放宽到 1024 字节**（原版超长路径会被静默截断）。若你依赖「截断后仍能导出」的旧行为，会有差异。
-7. **产物里会有 `.pdb`**：AOT 编译产生，不随 Release 分发（Release 只挂 exe 与校验和）。
-8. **不支持**：云同步、在线工坊下载、pkg 的**写回/重打包**、`interactive` 交互模式。
-9. **没有真实工坊样本做过端到端回归**：测试用的 pkg 是合成样本（含畸形/截断/路径穿越/超大条目等用例）。遇到具体包解析异常，欢迎带 `repkg info` 的输出提 issue。
+DXT1/3/5 decoding is the managed implementation that shipped with upstream RePKG, so no extra native dependency was introduced. Every dependency uses an OSI-approved permissive license.
 
 ---
 
-## 特别鸣谢
+## Notes and known limitations
 
-- **[notscuffed/RePKG](https://github.com/notscuffed/RePKG)** —— 本项目的起点。pkg 格式、TEX 格式、DXT 解码、帧表解析等大量知识来自这个 MIT 项目；本项目对它的改动集中在「条目表 / 数据区分离」与「图像栈换 SkiaSharp」，其余尽量保持原样。原版许可证见 [LICENSE-RePKG](LICENSE-RePKG)。
-- [Avalonia](https://github.com/AvaloniaUI/Avalonia)、[SkiaSharp](https://github.com/mono/SkiaSharp)、[K4os.Compression.LZ4](https://github.com/MiloszKrajewski/K4os.Compression.LZ4)、[CommunityToolkit](https://github.com/CommunityToolkit/dotnet) —— 撑起 GUI 与图像/压缩的底座。
-- 以及所有逆向过 Wallpaper Engine 包格式、并把结论公开出来的人。
+1. **The executables are not code signed, so Windows may show a SmartScreen prompt.**
+   On first run you may see "Windows protected your PC". Click **"More info" → "Run anyway"**; you can also right-click the exe → "Properties" → tick "Unblock". This is normal for unsigned distribution, not a corrupted file. Each release ships `SHA256SUMS.txt`, and you can verify with `Get-FileHash <exe> -Algorithm SHA256`.
+2. **The first start self-extracts the native libraries.**
+   SkiaSharp / HarfBuzz / ANGLE are embedded as resources and extracted to `%LOCALAPPDATA%\RePKG-Enhanced\native\<version>\` on first run (about 11.6 MB for the CLI, 19 MB for the GUI). Subsequent starts reuse them with no extra cost. **Upgrading extracts into a new version directory and the old one is not cleaned up automatically** — delete it by hand if you like.
+3. **Only Windows x64 binaries are published.** The code itself stays cross-platform (the `Core/Application/Shared` layers and the GUI all build and run on Linux/macOS), but the current release pipeline covers Windows x64 only.
+4. **TEX conversion needs the whole entry in memory.** A single mipmap is capped at 250 MB (an upstream constraint that guards against malformed packages). For very large entries use `--no-tex-convert` for the pure streaming path, where memory stays flat.
+5. **Animated GIF output is lossy**: at most 255 colours plus one transparent index (the trade-off of the self-written quantiser), and only raw mipmap formats are supported — same as upstream.
+6. **The in-package path limit was raised from 255 to 1024 bytes** (the original silently truncated longer paths). If you depended on the old "truncate but still export" behaviour, you will see a difference.
+7. **A `.pdb` is produced** by AOT compilation; it is not distributed with releases (only the executables and the checksum file are attached).
+8. **Not supported**: cloud sync, online workshop downloads, **writing back / repacking** a pkg, and the `interactive` mode.
+9. **No end-to-end regression against real workshop packages** — the test packages are synthetic (covering malformed, truncated, path-traversal and very large entries). If a specific package fails to parse, an issue with the output of `repkg info` is the fastest way to get it looked at.
+10. **The user interface and console output are currently Chinese only** (the CLI's option names are English). This English README is a translation of [README.zh-CN.md](README.zh-CN.md); if you need an English UI, that is a separate piece of work and not part of v1.0.0.
 
-## 许可
+---
 
-[MIT](LICENSE)。逐文件改动点在源文件头部注释里标注「基于 notscuffed/RePKG (MIT) 二次修改」；决策与取舍记录在 [docs/DECISIONS.md](docs/DECISIONS.md)。
+## Credits
 
-## 文档
+- **[notscuffed/RePKG](https://github.com/notscuffed/RePKG)** — where this project starts. A large amount of knowledge about the pkg format, the TEX format, DXT decoding and frame-table parsing comes from that MIT project; this project's changes to it are concentrated on "separating the entry table from the data region" and "moving the imaging stack to SkiaSharp", with everything else kept as close to the original as possible. The upstream license is in [LICENSE-RePKG](LICENSE-RePKG).
+- [Avalonia](https://github.com/AvaloniaUI/Avalonia), [SkiaSharp](https://github.com/mono/SkiaSharp), [K4os.Compression.LZ4](https://github.com/MiloszKrajewski/K4os.Compression.LZ4) and [CommunityToolkit](https://github.com/CommunityToolkit/dotnet) — the foundation under the GUI, imaging and compression.
+- And everyone who reverse-engineered the Wallpaper Engine package formats and published their findings.
 
-| 文档 | 内容 |
+## License
+
+[MIT](LICENSE). Per-file changes are marked with "based on notscuffed/RePKG (MIT), modified" in the file header; the decisions and trade-offs are recorded in [docs/DECISIONS.md](docs/DECISIONS.md).
+
+## Documentation
+
+| Document | Contents |
 |---|---|
-| [阶段 0：事实核查与根因](docs/00-stage0-fact-check.md) | 原版缺陷逐行定位、发布策略选型的实测依据 |
-| [阶段 1：目录与文件清单](docs/01-file-inventory.md) | 哪些文件原样保留、哪些修改、哪些新增 |
-| [阶段 2：流式内核](docs/02-streaming-core.md) | 条目表/数据区分离、1 GiB & 2.2 GiB 门禁数据 |
-| [阶段 3：Shared 层](docs/03-shared-layer.md) | 导出队列、原子写入、路径穿越防御、JSONL 日志 |
-| [阶段 4：TEX 栈与 CLI](docs/04-cli-and-textures.md) | SkiaSharp 迁移、自研 GIF 编码器、CLI 语义 |
-| [阶段 5：GUI 与清单](docs/05-gui.md) | Avalonia 12 界面、无头渲染测试、manifest |
-| [阶段 6：发布与 CI](docs/06-publish-and-ci.md) | AOT 单文件方案、内嵌原生库、Release 流水线 |
-| [决策记录](docs/DECISIONS.md) | 20 条 ADR：每个"为什么不那样做" |
+| [Stage 0: fact-finding and root cause](docs/00-stage0-fact-check.md) | Line-by-line location of the upstream defect, measured basis for the publishing strategy |
+| [Stage 1: file inventory](docs/01-file-inventory.md) | Which files are kept as-is, which are modified, which are new |
+| [Stage 2: streaming core](docs/02-streaming-core.md) | Entry table / data region separation, 1 GiB & 2.2 GiB gate data |
+| [Stage 3: Shared layer](docs/03-shared-layer.md) | Export queue, atomic writes, path-traversal defence, JSONL log |
+| [Stage 4: TEX stack and CLI](docs/04-cli-and-textures.md) | SkiaSharp migration, self-written GIF encoder, CLI semantics |
+| [Stage 5: GUI and manifest](docs/05-gui.md) | Avalonia 12 UI, headless rendering tests, manifest |
+| [Stage 6: publishing and CI](docs/06-publish-and-ci.md) | AOT single-file approach, embedded native libraries, release pipeline |
+| [Decision records](docs/DECISIONS.md) | 20 ADRs: the "why not that" behind every choice |

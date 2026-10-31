@@ -32,7 +32,8 @@ D:\BetterRePKG\
 ├─ LICENSE                                   + 本项目 MIT
 ├─ LICENSE-RePKG                             + 原版 MIT 全文（保留，不修改）
 ├─ THIRD-PARTY-NOTICES.txt                   ~ 移除 ImageSharp/System.Drawing；加入 SkiaSharp(MIT)/Skia(BSD-3)/Avalonia(MIT)/LZ4(MIT)/CommunityToolkit(MIT)
-├─ README.md                                 + 用法、构建、发布、改动说明
+├─ README.md                                 + 英文说明（仓库首页）：用法、构建、发布、改动说明
+├─ README.zh-CN.md                           + 中文说明（与英文版一一对应，顶部互相链接）
 ├─ Directory.Build.props                     + 公共编译属性（LangVersion、Nullable、InvariantGlobalization、AOT/trim 默认、确定性构建）
 ├─ Directory.Packages.props                  + 中央包版本管理（锁版本）
 ├─ global.json                               + 固定 SDK 10.0.4xx（rollForward: latestFeature）
