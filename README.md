@@ -98,6 +98,8 @@ dotnet publish src\RePKG.Gui\RePKG.Gui.csproj -c Release -r win-x64 -o artifacts
 
 打 `v*` tag 会触发 [.github/workflows/release.yml](.github/workflows/release.yml)：`windows-latest` 上还原 → 编译 → 四套单测 → AOT 发布 → 校验「目录里不许有 DLL」→ 上传两个 exe 与 `SHA256SUMS.txt` 到 Release。
 
+现成产物见 [Releases](https://github.com/dieraun/RePKG-Enhanced/releases)（最新：[v0.4.0](https://github.com/dieraun/RePKG-Enhanced/releases/tag/v0.4.0)）。
+
 ## 项目结构
 
 ```
