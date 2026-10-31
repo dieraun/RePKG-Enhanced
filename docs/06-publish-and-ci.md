@@ -276,3 +276,22 @@ RePKG.Tests.Gui      15 passed
 6. **CI 与 `global.json` 的版本耦合已实测通过**：runner 上 SDK 为 10.0.4xx，`global.json`（`10.0.100` + `rollForward: latestFeature`）能正常匹配；若将来 runner 只剩 10.0.1xx，`latestFeature` 仍允许，无需改动。
 7. **`gh release` 依赖 `GITHUB_TOKEN` 的 `contents: write`**：仓库当前默认 token 权限可用；若组织策略收紧，需要改用 PAT。
 8. **tag 与 main 的偏移已收敛**：`v1.0.0` 指向 `c33a9a2`，即当时的 main HEAD；之后只有纯文档提交。后续打 tag 时建议仍先确认 main 上的版本号（`Directory.Build.props` 的 `Version` 与 `Cli/HelpText.Version` 两处）已对齐。
+
+## 5.3 正式版 CI 运行结果（v2.0.0）
+
+| 项目 | 结果 |
+|---|---|
+| 触发 | tag `v2.0.0`（指向 `e81579f`），`push` → Run [#41200685733](https://github.com/dieraun/RePKG-Enhanced/actions/runs/41200685733) |
+| 耗时 | 3 分 32 秒，`success`（2026-10-31T12:20:48Z → 12:24:15Z） |
+| 产物 | `RePKG-Enhanced-win-x64.exe` 39 589 888 B、`repkg-win-x64.exe` 17 021 952 B、`SHA256SUMS.txt` 179 B |
+| 护栏 | 产物目录无 `.dll`、两 exe 均 > 5 MB；`repkg-win-x64.exe --version` 输出 `repkg 2.0.0` |
+
+校验（按用户设定的规则：优先镜像下载 `SHA256SUMS.txt`、不下载二进制包）：
+
+- 镜像前缀 `https://shturl.cc/CWg7vrfEaC7/...` 在本机 **DNS 解析失败**（`Could not resolve host: shturl.cc`），
+  按规则放弃下载校验，改为读取 CI「计算校验和」步骤的输出；
+- CI 输出 `78479ebf0d4454049278748c2653840153549baf6c46cdccc84a441d6d524d85  RePKG-Enhanced-win-x64.exe`、
+  `6df88755f2792fdb18d67781bbab6de99b824f8f27316b00c905035ef6e3b45f  repkg-win-x64.exe`，
+  与 Release 资产的 `digest` 字段逐字符一致。
+
+发布说明由 workflow 生成（中文），列出两个 exe 与自解压行为。
