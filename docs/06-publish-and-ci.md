@@ -154,6 +154,20 @@ rect=52,52 size=1216x819        ← 1200×780 客户区 + 边框
 
 YAML 已用 PyYAML 解析校验（15 个 step，单个 job）。
 
+工作流里的 pwsh 步骤已在本地逐段复现（`pwsh -Command` 跑同样的脚本片段）：
+
+```
+artifacts\cli\repkg.exe = 14369280 字节
+artifacts\gui\RePKG-Enhanced.exe = 37118464 字节
+== validation OK                      ← 无 DLL、体积达标
+
+20f4f3a6...a372  RePKG-Enhanced-win-x64.exe
+ddd11df7...1f30f  repkg-win-x64.exe
+== smoke                              ← repkg --version → repkg 0.4.0，退出码 0
+```
+
+唯一无法在本地验证的是最后一步 `gh release create/upload`（要有真实 tag 才能触发）。
+
 ---
 
 ## 6. 验收点对照
